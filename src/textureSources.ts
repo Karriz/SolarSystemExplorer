@@ -11,6 +11,20 @@ export type TextureSource = {
 
 // These are fixed visual composites, independent of the simulation date.
 export const textureSources: Partial<Record<BodyId, TextureSource>> = {
+  mercury: {
+    file: 'mercury.jpg', label: 'MESSENGER enhanced-color mosaic',
+    page: 'https://trek.nasa.gov/tiles/apidoc/trekAPI.html?body=mercury',
+    download: 'https://trek.nasa.gov/tiles/Mercury/EQ/Mercury_MESSENGER_MDIS_Basemap_EnhancedColor_Mosaic_Global_665m/1.0.0/WMTSCapabilities.xml',
+    credit: 'NASA / JHUAPL / ASU / Carnegie / ACT',
+    note: '2048 × 1024 fallback assembled from NASA Trek geographic level 2. Enhanced color, not natural color.',
+  },
+  venus: {
+    file: 'venus.jpg', label: 'Magellan radar surface mosaic',
+    page: 'https://science.nasa.gov/3d-resources/venus/',
+    download: 'https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/image/venus/Venus.jpg',
+    credit: 'NASA / JPL-Caltech',
+    note: 'Radar surface composite with filled imagery gaps, not a visible-light or cloud image.',
+  },
   earth: {
     file: 'earth.jpg',
     label: 'Blue Marble with bathymetry',

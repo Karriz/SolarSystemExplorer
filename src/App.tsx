@@ -4,6 +4,8 @@ import { ExplorerScene, type ScreenMarker } from './ExplorerScene'
 import { bodyInfo, bodyOrder, positionAt, type BodyId } from './ephemeris'
 import { textureSources } from './textureSources'
 import { surfaceTileSources, type TileBody } from './surfaceTiles'
+import type { TerrainStatus } from './GlobeTerrainLayer'
+import { isTerrainBody, type TerrainBody } from './terrain'
 
 const AU_KM = 149_597_870.7
 const DAY_MS = 86_400_000
@@ -34,6 +36,10 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [terrainEnabled, setTerrainEnabled] = useState(true)
+  const [terrainExaggeration, setTerrainExaggeration] = useState(1)
+  const [terrainStatuses, setTerrainStatuses] = useState<Partial<Record<TerrainBody, TerrainStatus>>>({})
+  const terrainStatus: TerrainStatus = terrainStatuses[selected as TerrainBody] ?? { body: isTerrainBody(selected) ? selected : 'moon', state: 'loading', loadedTiles: 0, failedTiles: 0 }
   const selectedInfo = bodyInfo[selected]
   const results = useMemo(() => bodyOrder.filter(id => bodyInfo[id].name.toLowerCase().includes(query.toLowerCase())), [query])
 
@@ -46,7 +52,7 @@ export default function App() {
         element.style.visibility = marker.visible ? 'visible' : 'hidden'
         if (marker.visible) element.style.transform = `translate3d(${marker.x - 12}px, ${marker.y - 12}px, 0)`
       }
-    })
+    }, status => setTerrainStatuses(previous => ({ ...previous, [status.body]: status })))
     explorer.setDate(dateRef.current)
     sceneRef.current = explorer
     const markerLayer = markerLayerRef.current
@@ -162,6 +168,16 @@ export default function App() {
         {selected !== 'sun' && <div className="surface-source">Rotation: <a href={selected === 'earth' ? 'https://aa.usno.navy.mil/faq/GAST' : 'https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc'} target="_blank" rel="noreferrer">{selected === 'earth' ? 'USNO sidereal time' : 'JPL NAIF planetary constants'}</a> · approximate</div>}
         {textureSources[selected] && <div className="surface-source">Surface: <a href={textureSources[selected]!.page} target="_blank" rel="noreferrer">{textureSources[selected]!.label}</a> · {textureSources[selected]!.credit}</div>}
         {selected in surfaceTileSources && <div className="surface-source">Detail: <a href={surfaceTileSources[selected as TileBody].page} target="_blank" rel="noreferrer">{surfaceTileSources[selected as TileBody].label}</a> · {surfaceTileSources[selected as TileBody].credit}</div>}
+        {isTerrainBody(selected) && <div className="terrain-controls">
+          <div className="terrain-options">
+            <button aria-pressed={terrainEnabled} onClick={() => { sceneRef.current?.setTerrain(!terrainEnabled); setTerrainEnabled(!terrainEnabled) }}>Terrain {terrainEnabled ? 'on' : 'off'}</button>
+            <label>Relief <select aria-label="Terrain relief" value={terrainExaggeration} disabled={!terrainEnabled} onChange={e => { const value = Number(e.target.value); sceneRef.current?.setTerrainExaggeration(value); setTerrainExaggeration(value) }}><option value={1}>True scale</option><option value={4}>4× exaggerated</option></select></label>
+          </div>
+          <div role="status" className="surface-source">{terrainStatus.state === 'ready' ? (terrainStatus.failedTiles ? 'Terrain on · some detail unavailable' : `Measured relief · ${terrainStatus.source && terrainStatus.source.resolution < 1000 ? `${Math.round(terrainStatus.source.resolution)} m` : `${((terrainStatus.source?.resolution ?? 0) / 1000).toFixed(1)} km`} source grid`) : terrainStatus.state === 'unavailable' ? 'Terrain unavailable · showing imagery' : terrainStatus.state === 'off' ? 'Terrain off · showing imagery' : terrainStatus.failedTiles ? 'Terrain unavailable · retrying' : 'Loading terrain…'}</div>
+          {terrainStatus.source && <div className="surface-source">Elevation: <a href={terrainStatus.source.url} target="_blank" rel="noreferrer">{terrainStatus.source.credit}</a></div>}
+          {terrainStatus.source?.gaps && <div className="surface-source">Gray terrain marks gaps in elevation coverage.</div>}
+          {terrainStatus.source?.approximate && <div className="surface-source">Heights above the Martian areoid, shown on a mean-radius sphere.</div>}
+        </div>}
         <div className="info-actions"><button onClick={() => sceneRef.current?.focus(selected)}><Focus size={16} /> Focus view</button>{selected !== 'sun' && <button className="quiet" onClick={() => { const parent: BodyId = selected === 'moon' ? 'earth' : 'sun'; choose(parent) }}><ArrowLeft size={16} /> {selected === 'moon' ? 'Earth' : 'Sun'}</button>}</div>
       </section>}
       {!infoOpen && <button className="reopen-info" onClick={() => setInfoOpen(true)}><Info size={17} /> Show details</button>}

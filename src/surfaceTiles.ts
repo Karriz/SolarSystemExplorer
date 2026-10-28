@@ -1,4 +1,4 @@
-export type TileBody = 'earth' | 'moon' | 'mars'
+export type TileBody = 'earth' | 'moon' | 'mars' | 'mercury'
 export type TileAddress = { z: number; x: number; y: number }
 export type TileBounds = { west: number; east: number; north: number; south: number; span: number }
 export type SurfaceTileSource = {
@@ -14,6 +14,13 @@ export type SurfaceTileSource = {
 // Verified against each service's WMTS GetCapabilities. GIBS CRS84 uses a
 // 288-degree root tile with padding at the eastern and southern edges.
 export const surfaceTileSources: Record<TileBody, SurfaceTileSource> = {
+  mercury: {
+    label: 'NASA Trek · MESSENGER enhanced color',
+    page: 'https://trek.nasa.gov/tiles/apidoc/trekAPI.html?body=mercury',
+    credit: 'NASA / JHUAPL / ASU / Carnegie / ACT',
+    tileSize: 256, rootSpan: 180, maxZoom: 7,
+    url: ({ z, x, y }) => `https://trek.nasa.gov/tiles/Mercury/EQ/Mercury_MESSENGER_MDIS_Basemap_EnhancedColor_Mosaic_Global_665m/1.0.0/default/default028mm/${z}/${y}/${x}.jpg`,
+  },
   earth: {
     label: 'GIBS Blue Marble with bathymetry',
     page: 'https://nasa-gibs.github.io/gibs-api-docs/',

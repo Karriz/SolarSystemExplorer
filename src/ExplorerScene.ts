@@ -5,6 +5,8 @@ import { orientationAt } from './orientation'
 import { constrainCamera, SURFACE_CLEARANCE } from './cameraSafety'
 import { GlobeTileLayer, brightenOceans } from './GlobeTileLayer'
 import { createCameraOrbit, type BodyCameraControls } from './cameraOrbit'
+import { GlobeTerrainLayer, type TerrainStatus } from './GlobeTerrainLayer'
+import { terrainBodies, type TerrainBody } from './terrain'
 
 export type ScreenMarker = { id: BodyId; x: number; y: number; visible: boolean }
 const DAY_MS = 86400000
@@ -104,9 +106,11 @@ export class ExplorerScene {
   private textureLoader = new THREE.TextureLoader()
   private disposed = false
   private surfaceTiles: GlobeTileLayer
+  private terrain = new Map<TerrainBody, GlobeTerrainLayer>()
   private onControlStart = () => { this.focusDistance = null; this.focusDirection = null }
 
-  constructor(container: HTMLElement, onMarkers: (markers: ScreenMarker[]) => void) {
+  constructor(container: HTMLElement, onMarkers: (markers: ScreenMarker[]) => void,
+    onTerrainStatus: (status: TerrainStatus) => void = () => {}) {
     this.container = container
     this.onMarkers = onMarkers
     // At AU-scale close-ups, logarithmic depth loses precision in 1 + clip.w
@@ -131,6 +135,8 @@ export class ExplorerScene {
     this.scene.add(this.stars)
     this.createBodies()
     this.surfaceTiles = new GlobeTileLayer(this.bodies, this.renderer)
+    for (const id of terrainBodies) this.terrain.set(id, new GlobeTerrainLayer(this.bodies.get(id)!, onTerrainStatus,
+      new URL(`${import.meta.env.BASE_URL}terrain/`, window.location.href).href, undefined, id))
     this.updateBodyOrientations()
     this.createOrbits()
     this.resizeObserver = new ResizeObserver(() => this.resize())
@@ -285,6 +291,8 @@ export class ExplorerScene {
     this.updateMoonOrbit()
   }
   setOrbits(visible: boolean) { this.showOrbits = visible; this.orbits.forEach(o => { o.visible = visible }) }
+  setTerrain(enabled: boolean) { this.terrain.forEach(layer => layer.setEnabled(enabled)) }
+  setTerrainExaggeration(value: number) { this.terrain.forEach(layer => layer.setExaggeration(value)) }
 
   focus(id: BodyId) {
     this.recenterControls(radiusAu(id))
@@ -378,7 +386,13 @@ export class ExplorerScene {
       this.camera.updateProjectionMatrix()
     }
     this.stars.position.copy(this.camera.position)
-    this.surfaceTiles.update(this.camera, this.container.clientHeight * this.renderer.getPixelRatio(), performance.now())
+    const now = performance.now(), viewportHeight = this.container.clientHeight * this.renderer.getPixelRatio()
+    let terrainBody: TerrainBody | null = null
+    for (const [id, layer] of this.terrain) {
+      layer.update(this.camera, viewportHeight, now, this.selected === id)
+      if (layer.active) terrainBody = id
+    }
+    this.surfaceTiles.update(this.camera, viewportHeight, now, terrainBody)
     this.renderer.render(this.scene, this.camera)
     const width = this.container.clientWidth, height = this.container.clientHeight
     const markers = bodyOrder.map(id => {
@@ -412,6 +426,7 @@ export class ExplorerScene {
     this.resizeObserver.disconnect()
     this.controls.dispose()
     this.surfaceTiles.dispose()
+    this.terrain.forEach(layer => layer.dispose())
     this.scene.traverse(object => {
       if (object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Points || object instanceof THREE.Sprite) {
         object.geometry?.dispose()

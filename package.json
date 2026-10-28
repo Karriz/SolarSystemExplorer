@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "terrain:build": "sh scripts/terrain-python.sh scripts/build-terrain.py",
+    "terrain:validate": "sh scripts/terrain-python.sh scripts/validate-terrain.py",
     "test": "node --experimental-strip-types tests/run.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",

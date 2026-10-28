@@ -70,6 +70,7 @@ export class GlobeTileLayer {
   private lastUpdate = -Infinity
   private bytes = 0
   private requests = 0
+  private suppressedBody: string | null = null
   private anisotropy: number
   private bodies: Map<string, THREE.Mesh>
 
@@ -80,7 +81,8 @@ export class GlobeTileLayer {
     this.bodies = bodies
     this.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy())
     for (const body of Object.keys(surfaceTileSources) as TileBody[]) {
-      const mesh = bodies.get(body)!
+      const mesh = bodies.get(body)
+      if (!mesh) continue
       const radius = (mesh.geometry as THREE.SphereGeometry).parameters.radius
       const group = new THREE.Group()
       group.name = `${body}-surface-tiles`
@@ -90,13 +92,15 @@ export class GlobeTileLayer {
     }
   }
 
-  update(camera: THREE.PerspectiveCamera, viewportHeight: number, now: number) {
+  update(camera: THREE.PerspectiveCamera, viewportHeight: number, now: number, suppressedBody: string | null = null) {
+    if (this.suppressedBody !== suppressedBody) { this.suppressedBody = suppressedBody; this.lastUpdate = -Infinity }
     if (this.disposed || now - this.lastUpdate < 120) return
     this.lastUpdate = now
     this.wanted.clear()
     camera.updateMatrixWorld()
     const focal = viewportHeight / (2 * Math.tan(camera.fov * DEG / 2))
     for (const [body, group] of this.groups) {
+      if (body === suppressedBody) { group.visible = false; continue }
       const mesh = this.bodies.get(body)!
       mesh.updateWorldMatrix(true, true)
       const radius = group.scale.x
