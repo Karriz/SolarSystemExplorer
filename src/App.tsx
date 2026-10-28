@@ -3,6 +3,7 @@ import { ArrowLeft, ChevronDown, Clock3, Compass, Focus, Info, Layers3, Pause, P
 import { ExplorerScene, type ScreenMarker } from './ExplorerScene'
 import { bodyInfo, bodyOrder, positionAt, type BodyId } from './ephemeris'
 import { textureSources } from './textureSources'
+import { surfaceTileSources, type TileBody } from './surfaceTiles'
 
 const AU_KM = 149_597_870.7
 const DAY_MS = 86_400_000
@@ -135,7 +136,7 @@ export default function App() {
             {selected === id && <span className="row-active-mark" />}
           </button>)}
         </div>
-        <div className="sidebar-bottom"><span className="tiny-orbit" /> <span>Left drag to pan <b>·</b> Right drag to tilt <b>·</b> Scroll to zoom</span></div>
+        <div className="sidebar-bottom"><span className="tiny-orbit" /> <span>Left drag to orbit <b>·</b> Right drag to tilt <b>·</b> Scroll to zoom</span></div>
       </aside>
 
       <div className="marker-layer" ref={markerLayerRef}>
@@ -160,6 +161,7 @@ export default function App() {
         <div className="info-stat"><span>POSITION</span><strong>{distanceLabel(selected, date)}</strong></div>
         {selected !== 'sun' && <div className="surface-source">Rotation: <a href={selected === 'earth' ? 'https://aa.usno.navy.mil/faq/GAST' : 'https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc'} target="_blank" rel="noreferrer">{selected === 'earth' ? 'USNO sidereal time' : 'JPL NAIF planetary constants'}</a> · approximate</div>}
         {textureSources[selected] && <div className="surface-source">Surface: <a href={textureSources[selected]!.page} target="_blank" rel="noreferrer">{textureSources[selected]!.label}</a> · {textureSources[selected]!.credit}</div>}
+        {selected in surfaceTileSources && <div className="surface-source">Detail: <a href={surfaceTileSources[selected as TileBody].page} target="_blank" rel="noreferrer">{surfaceTileSources[selected as TileBody].label}</a> · {surfaceTileSources[selected as TileBody].credit}</div>}
         <div className="info-actions"><button onClick={() => sceneRef.current?.focus(selected)}><Focus size={16} /> Focus view</button>{selected !== 'sun' && <button className="quiet" onClick={() => { const parent: BodyId = selected === 'moon' ? 'earth' : 'sun'; choose(parent) }}><ArrowLeft size={16} /> {selected === 'moon' ? 'Earth' : 'Sun'}</button>}</div>
       </section>}
       {!infoOpen && <button className="reopen-info" onClick={() => setInfoOpen(true)}><Info size={17} /> Show details</button>}

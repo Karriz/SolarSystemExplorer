@@ -1,8 +1,10 @@
 import * as THREE from 'three'
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { bodyInfo, bodyOrder, orbitPathAt, planetOrder, positionAt, radiusAu, type BodyId } from './ephemeris'
 import { textureSources } from './textureSources'
 import { orientationAt } from './orientation'
+import { constrainCamera, SURFACE_CLEARANCE } from './cameraSafety'
+import { GlobeTileLayer, brightenOceans } from './GlobeTileLayer'
+import { createCameraOrbit, type BodyCameraControls } from './cameraOrbit'
 
 export type ScreenMarker = { id: BodyId; x: number; y: number; visible: boolean }
 const DAY_MS = 86400000
@@ -78,7 +80,7 @@ function makeStars(): THREE.Points {
 export class ExplorerScene {
   readonly renderer: THREE.WebGLRenderer
   readonly camera: THREE.PerspectiveCamera
-  readonly controls: OrbitControls
+  controls: BodyCameraControls
   readonly scene = new THREE.Scene()
   readonly bodies = new Map<BodyId, THREE.Mesh>()
   readonly orbits: THREE.Object3D[] = []
@@ -101,11 +103,16 @@ export class ExplorerScene {
   private saturnRings: THREE.Group | null = null
   private textureLoader = new THREE.TextureLoader()
   private disposed = false
+  private surfaceTiles: GlobeTileLayer
+  private onControlStart = () => { this.focusDistance = null; this.focusDirection = null }
 
   constructor(container: HTMLElement, onMarkers: (markers: ScreenMarker[]) => void) {
     this.container = container
     this.onMarkers = onMarkers
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance' })
+    // At AU-scale close-ups, logarithmic depth loses precision in 1 + clip.w
+    // and makes imagery patches flicker. Adaptive near clipping keeps ordinary
+    // perspective depth precise at both globe and Solar System distances.
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
@@ -113,18 +120,9 @@ export class ExplorerScene {
     container.appendChild(this.renderer.domElement)
     this.camera = new THREE.PerspectiveCamera(48, 1, 0.000001, 200)
     this.camera.position.set(0, 8, 19)
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement)
-    this.controls.enableDamping = true
-    this.controls.dampingFactor = .18
-    this.controls.mouseButtons.LEFT = THREE.MOUSE.PAN
-    this.controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE
-    // OrbitControls pans in proportion to camera distance for perspective views.
-    this.controls.panSpeed = .85
-    this.controls.minDistance = .000015
-    this.controls.maxDistance = 85
-    this.controls.zoomSpeed = 1.25
-    this.controls.zoomToCursor = true
-    this.controls.addEventListener('start', () => { this.focusDistance = null; this.focusDirection = null })
+    this.camera.lookAt(0, 0, 0)
+    this.controls = createCameraOrbit(this.camera, this.renderer.domElement, new THREE.Vector3(),
+      radiusAu('sun') * (1 + SURFACE_CLEARANCE), this.onControlStart)
 
     this.scene.add(new THREE.AmbientLight('#c5d8f0', .25))
     // Normalize brightness across orbital distances so every globe shows its solar terminator.
@@ -132,6 +130,7 @@ export class ExplorerScene {
     this.scene.add(this.sunLight)
     this.scene.add(this.stars)
     this.createBodies()
+    this.surfaceTiles = new GlobeTileLayer(this.bodies, this.renderer)
     this.updateBodyOrientations()
     this.createOrbits()
     this.resizeObserver = new ResizeObserver(() => this.resize())
@@ -143,7 +142,7 @@ export class ExplorerScene {
   private createBodies() {
     for (const id of bodyOrder) {
       const radius = radiusAu(id)
-      const geometry = new THREE.SphereGeometry(radius, id === 'sun' ? 48 : 36, 24)
+      const geometry = new THREE.SphereGeometry(radius, id === 'sun' ? 96 : 128, 96)
       const material = id === 'sun'
         ? new THREE.MeshBasicMaterial({ color: '#ffda87' })
         : new THREE.MeshStandardMaterial({ map: makeTexture(id), roughness: 1, metalness: 0 })
@@ -182,15 +181,7 @@ export class ExplorerScene {
       if (id === 'earth') {
         // The satellite composite's deep oceans are nearly black. Lift only blue
         // water pixels before lighting so coastlines and land colors stay intact.
-        material.onBeforeCompile = shader => {
-          shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
-            #include <map_fragment>
-            float oceanMask = smoothstep(0.005, 0.025, diffuseColor.b - max(diffuseColor.r, diffuseColor.g))
-              * (1.0 - smoothstep(0.08, 0.25, diffuseColor.r));
-            diffuseColor.rgb = mix(diffuseColor.rgb,
-              max(diffuseColor.rgb, vec3(0.025, 0.095, 0.28)), oceanMask * 0.7);
-          `)
-        }
+        brightenOceans(material)
       }
       material.emissive.set('#ffffff')
       material.emissiveMap = texture
@@ -296,7 +287,7 @@ export class ExplorerScene {
   setOrbits(visible: boolean) { this.showOrbits = visible; this.orbits.forEach(o => { o.visible = visible }) }
 
   focus(id: BodyId) {
-    this.recenterControls()
+    this.recenterControls(radiusAu(id))
     this.selected = id
     this.origin.copy(vector(id, this.date))
     this.focusDirection = null
@@ -309,23 +300,37 @@ export class ExplorerScene {
       this.focusDirection = tangent.normalize().multiplyScalar(Math.sqrt(1 - .3 * .3)).addScaledVector(towardSun, .3)
     }
     const r = radiusAu(id)
-    this.controls.minDistance = r * 2.5
     this.focusDistance = id === 'sun' ? .05 : id === 'moon' ? .00012 : Math.max(r * 9, .000085)
   }
 
   overview() {
-    this.recenterControls()
+    this.recenterControls(radiusAu('sun'))
     this.selected = 'sun'
     this.origin.set(0, 0, 0)
-    this.controls.minDistance = radiusAu('sun') * 2.5
     this.focusDistance = 20
     this.focusDirection = null
   }
 
-  private recenterControls() {
+  private recenterControls(radius: number) {
+    this.camera.up.set(0, 1, 0)
     this.camera.position.sub(this.controls.target)
     this.controls.target.set(0, 0, 0)
-    this.controls.update()
+    this.controls.minDistance = radius * (1 + SURFACE_CLEARANCE)
+    // Switching from a small moon close-up to a larger body must start outside
+    // that body without the collision correction translating the focus target.
+    const clearance = radius * (1 + SURFACE_CLEARANCE)
+    if (this.camera.position.length() < clearance) {
+      if (this.camera.position.lengthSq() === 0) this.camera.position.set(0, 0, 1)
+      this.camera.position.setLength(clearance)
+    }
+    this.camera.lookAt(this.controls.target)
+    this.rebaseControls()
+  }
+
+  private rebaseControls() {
+    const target = this.controls.target, minDistance = this.controls.minDistance
+    this.controls.dispose()
+    this.controls = createCameraOrbit(this.camera, this.renderer.domElement, target, minDistance, this.onControlStart)
   }
 
   private tick = () => {
@@ -347,19 +352,44 @@ export class ExplorerScene {
       const next = Math.exp(Math.log(Math.max(distance, 1e-8)) * .935 + Math.log(this.focusDistance) * .065)
       if (this.focusDirection) offset.normalize().lerp(this.focusDirection, .045).normalize()
       this.camera.position.copy(this.controls.target).add(offset.setLength(next))
+      this.camera.lookAt(this.controls.target)
       if (Math.abs(Math.log(next / this.focusDistance)) < .003 && (!this.focusDirection || offset.angleTo(this.focusDirection) < .003)) {
         this.focusDistance = null
         this.focusDirection = null
       }
     }
+    this.controls.target.set(0, 0, 0)
+    const selectedBody = this.bodies.get(this.selected)!
+    this.controls.setBody({ id: this.selected, center: selectedBody.position,
+      rotation: selectedBody.quaternion, radius: radiusAu(this.selected) }, this.focusDistance === null)
     this.controls.update()
+    const near = constrainCamera(
+      this.camera.position,
+      this.controls.target,
+      // Orbit motion follows an arc; its straight chord can cut through the
+      // selected globe even though the camera stays outside the surface.
+      null,
+      bodyOrder.map(id => ({ center: this.bodies.get(id)!.position, radius: radiusAu(id) })),
+    )
+    // A collision with another body must not move the selected body's pivot.
+    this.controls.target.set(0, 0, 0)
+    if (Math.abs(near - this.camera.near) > this.camera.near * .01) {
+      this.camera.near = near
+      this.camera.updateProjectionMatrix()
+    }
     this.stars.position.copy(this.camera.position)
+    this.surfaceTiles.update(this.camera, this.container.clientHeight * this.renderer.getPixelRatio(), performance.now())
     this.renderer.render(this.scene, this.camera)
     const width = this.container.clientWidth, height = this.container.clientHeight
     const markers = bodyOrder.map(id => {
       const mesh = this.bodies.get(id)!
       const projected = mesh.position.clone().project(this.camera)
-      return { id, x: (projected.x * .5 + .5) * width, y: (-projected.y * .5 + .5) * height, visible: projected.z > -1 && projected.z < 1 && projected.x > -1.2 && projected.x < 1.2 && projected.y > -1.2 && projected.y < 1.2 }
+      const distance = this.camera.position.distanceTo(mesh.position)
+      const projectedRadius = radiusAu(id) * height / (2 * Math.tan(this.camera.fov * DEG / 2) * Math.max(distance, 1e-12))
+      // Once the selected globe is visible, its center label must not intercept
+      // drags intended to rotate it. Tiny overview bodies keep their labels.
+      const closeSelected = id === this.selected && projectedRadius > 12
+      return { id, x: (projected.x * .5 + .5) * width, y: (-projected.y * .5 + .5) * height, visible: !closeSelected && projected.z > -1 && projected.z < 1 && projected.x > -1.2 && projected.x < 1.2 && projected.y > -1.2 && projected.y < 1.2 }
     })
     const earthMarker = markers.find(marker => marker.id === 'earth')!
     const moonMarker = markers.find(marker => marker.id === 'moon')!
@@ -381,6 +411,7 @@ export class ExplorerScene {
     cancelAnimationFrame(this.frame)
     this.resizeObserver.disconnect()
     this.controls.dispose()
+    this.surfaceTiles.dispose()
     this.scene.traverse(object => {
       if (object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Points || object instanceof THREE.Sprite) {
         object.geometry?.dispose()
