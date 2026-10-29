@@ -15,12 +15,12 @@ export class TerrainDecoder {
     this.worker.onerror = () => { this.failed = true; this.failAll(new Error('Terrain worker failed')) }
   }
 
-  decode(buffer: ArrayBuffer, sampleSize: number, sha256: string, scaleMeters = .5, noData?: number): Promise<Float32Array> {
+  decode(buffer: ArrayBuffer, sampleSize: number, sha256: string, scaleMeters = .5, noData?: number, components = 1): Promise<Float32Array> {
     if (this.failed) return Promise.reject(new Error('Terrain decoder unavailable'))
     const id = this.nextId++
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject })
-      try { this.worker.postMessage({ id, buffer, sampleSize, sha256, scaleMeters, noData }, [buffer]) }
+      try { this.worker.postMessage({ id, buffer, sampleSize, sha256, scaleMeters, noData, components }, [buffer]) }
       catch (error) { this.pending.delete(id); reject(error) }
     })
   }

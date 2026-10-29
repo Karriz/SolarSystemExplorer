@@ -7,6 +7,10 @@ import { GlobeTileLayer, brightenOceans } from './GlobeTileLayer'
 import { createCameraOrbit, type BodyCameraControls } from './cameraOrbit'
 import { GlobeTerrainLayer, type TerrainStatus } from './GlobeTerrainLayer'
 import { terrainBodies, type TerrainBody } from './terrain'
+import { RegionalTerrainLayer, type RegionalMetrics } from './RegionalTerrainLayer'
+import { earthPilotSources, lunarPilotSource } from './RegionalTerrainSource'
+import { configureSurfaceMaterial, surfaceState } from './surfaceMaterial'
+import { geoDirection, pilotLocations } from './terrainPilot'
 
 export type ScreenMarker = { id: BodyId; x: number; y: number; visible: boolean }
 const DAY_MS = 86400000
@@ -98,6 +102,7 @@ export class ExplorerScene {
   private resizeObserver: ResizeObserver
   private container: HTMLElement
   private sunLight: THREE.PointLight
+  private terrainSun = new THREE.DirectionalLight('#fff0d0', 0)
   private moonOrbit: THREE.LineLoop | null = null
   private moonOrbitDate = 0
   private planetOrbits = new Map<BodyId, THREE.LineLoop>()
@@ -107,16 +112,34 @@ export class ExplorerScene {
   private disposed = false
   private surfaceTiles: GlobeTileLayer
   private terrain = new Map<TerrainBody, GlobeTerrainLayer>()
-  private onControlStart = () => { this.focusDistance = null; this.focusDirection = null }
+  private surfaces = { earth: surfaceState(), moon: surfaceState() }
+  private regional = new Map<'earth' | 'moon', RegionalTerrainLayer>()
+  private pilotMetricsKey = ''
+  private onPilotStatus?: (body: 'earth' | 'moon', metrics: RegionalMetrics) => void
+  private pilotError = ''
+  private pilotAltitude: { direction: THREE.Vector3; altitude: number; until: number } | null = null
+  private lastAltitudeMeters = 0
+  private pilotMetadata = new AbortController()
+  private hitGround = (ray: THREE.Ray) => this.regional.get(this.selected as 'earth' | 'moon')?.hitGround(ray)
+    ?? this.terrain.get(this.selected as TerrainBody)?.hitGround(ray) ?? null
+  private onControlStart = () => { this.focusDistance = null; this.focusDirection = null; this.pilotAltitude = null }
 
   constructor(container: HTMLElement, onMarkers: (markers: ScreenMarker[]) => void,
-    onTerrainStatus: (status: TerrainStatus) => void = () => {}) {
+    onTerrainStatus: (status: TerrainStatus) => void = () => {}, onPilotStatus?: (body: 'earth' | 'moon', metrics: RegionalMetrics) => void) {
+    this.onPilotStatus = onPilotStatus
     this.container = container
     this.onMarkers = onMarkers
     // At AU-scale close-ups, logarithmic depth loses precision in 1 + clip.w
     // and makes imagery patches flicker. Adaptive near clipping keeps ordinary
     // perspective depth precise at both globe and Solar System distances.
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' })
+    this.renderer.shadowMap.enabled = true
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    this.terrainSun.castShadow = true
+    this.terrainSun.shadow.mapSize.set(1024, 1024)
+    this.terrainSun.shadow.bias = -0.00001
+    this.terrainSun.shadow.normalBias = 1 / 149_597_870_700
+    this.scene.add(this.terrainSun, this.terrainSun.target)
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
@@ -126,17 +149,22 @@ export class ExplorerScene {
     this.camera.position.set(0, 8, 19)
     this.camera.lookAt(0, 0, 0)
     this.controls = createCameraOrbit(this.camera, this.renderer.domElement, new THREE.Vector3(),
-      radiusAu('sun') * (1 + SURFACE_CLEARANCE), this.onControlStart)
+      radiusAu('sun') + SURFACE_CLEARANCE, this.onControlStart, this.hitGround)
 
     this.scene.add(new THREE.AmbientLight('#c5d8f0', .25))
     // Normalize brightness across orbital distances so every globe shows its solar terminator.
     this.sunLight = new THREE.PointLight('#fff0d0', 3, 0, 0)
     this.scene.add(this.sunLight)
     this.scene.add(this.stars)
+    this.surfaces.earth.detail.value = 0
     this.createBodies()
-    this.surfaceTiles = new GlobeTileLayer(this.bodies, this.renderer)
+    this.surfaceTiles = new GlobeTileLayer(this.bodies, this.renderer, new Set(['earth', 'moon']))
     for (const id of terrainBodies) this.terrain.set(id, new GlobeTerrainLayer(this.bodies.get(id)!, onTerrainStatus,
-      new URL(`${import.meta.env.BASE_URL}terrain/`, window.location.href).href, undefined, id))
+      new URL(import.meta.env.VITE_TERRAIN_BASE_URL || `${import.meta.env.BASE_URL}terrain/`, window.location.href).href, undefined, id, id === 'moon' ? this.surfaces.moon : undefined))
+    for (const id of ['earth', 'moon'] as const) this.regional.set(id, new RegionalTerrainLayer(this.bodies.get(id)!, id, this.surfaces[id]))
+    earthPilotSources().forEach(source => this.regional.get('earth')!.addSource(source))
+    void lunarPilotSource(new URL(`${import.meta.env.BASE_URL}terrain/pilot/`, window.location.href).href, this.pilotMetadata.signal)
+      .then(source => this.regional.get('moon')!.addSource(source)).catch(error => { if (!this.disposed) this.pilotError = String(error) })
     this.updateBodyOrientations()
     this.createOrbits()
     this.resizeObserver = new ResizeObserver(() => this.resize())
@@ -152,7 +180,14 @@ export class ExplorerScene {
       const material = id === 'sun'
         ? new THREE.MeshBasicMaterial({ color: '#ffda87' })
         : new THREE.MeshStandardMaterial({ map: makeTexture(id), roughness: 1, metalness: 0 })
+      if (id === 'earth' || id === 'moon') configureSurfaceMaterial(material, this.surfaces[id], bodyInfo[id].radiusKm * 1000, 1 / radius, true)
       const mesh = new THREE.Mesh(geometry, material)
+      mesh.castShadow = id !== 'earth'
+      mesh.receiveShadow = id !== 'earth'
+      if (id === 'earth' || id === 'moon') {
+        mesh.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })
+        configureSurfaceMaterial(mesh.customDepthMaterial, this.surfaces[id], bodyInfo[id].radiusKm * 1000, 1 / radius, true)
+      }
       mesh.userData.bodyId = id
       this.scene.add(mesh)
       this.bodies.set(id, mesh)
@@ -191,7 +226,7 @@ export class ExplorerScene {
       }
       material.emissive.set('#ffffff')
       material.emissiveMap = texture
-      material.emissiveIntensity = .02
+      material.emissiveIntensity = id === 'earth' || id === 'moon' ? 0 : .02
       material.needsUpdate = true
     }, undefined, () => {
       // Keep the procedural map when an asset is unavailable.
@@ -291,10 +326,40 @@ export class ExplorerScene {
     this.updateMoonOrbit()
   }
   setOrbits(visible: boolean) { this.showOrbits = visible; this.orbits.forEach(o => { o.visible = visible }) }
-  setTerrain(enabled: boolean) { this.terrain.forEach(layer => layer.setEnabled(enabled)) }
-  setTerrainExaggeration(value: number) { this.terrain.forEach(layer => layer.setExaggeration(value)) }
+  setTerrain(enabled: boolean) { this.terrain.forEach(layer => layer.setEnabled(enabled)); this.regional.forEach(layer => layer.setEnabled(enabled)) }
+  setTerrainExaggeration(value: number) { this.terrain.forEach(layer => layer.setExaggeration(value)); this.regional.forEach(layer => layer.setExaggeration(value)) }
+  private terrainShadows = true
+  setTerrainShadows(enabled: boolean) { this.terrainShadows = enabled }
+  setSurfaceDetail(enabled: boolean) { this.surfaces.moon.detail.value = enabled ? 1 : 0 }
+  pilot(id: string, altitude?: number) {
+    const location = pilotLocations.find(p => p.id === id)
+    if (!location) return
+    this.surfaceLocation(location.body, location.lat, location.lon, altitude ?? location.altitude)
+  }
+  surfaceLocation(body: BodyId, lat: number, lon: number, altitude = 12000) {
+    if (![lat, lon, altitude].every(Number.isFinite) || lat < -90 || lat > 90 || altitude < 100) return
+    this.focus(body)
+    this.focusDistance = null; this.focusDirection = null
+    const direction = geoDirection(lat, lon).applyQuaternion(this.bodies.get(body)!.quaternion)
+    this.camera.position.copy(direction).multiplyScalar(radiusAu(body) + altitude / 149_597_870_700)
+    this.pilotAltitude = { direction: geoDirection(lat, lon), altitude, until: performance.now() + 15000 }
+    this.camera.up.set(0, 1, 0).applyQuaternion(this.bodies.get(body)!.quaternion)
+    this.camera.lookAt(0, 0, 0)
+    this.rebaseControls()
+  }
+  pilotImageSample() {
+    this.renderer.render(this.scene, this.camera)
+    const gl = this.renderer.getContext(), pixels = new Uint8Array(32 * 32 * 4)
+    gl.readPixels(Math.floor(gl.drawingBufferWidth / 2)-16, Math.floor(gl.drawingBufferHeight / 2)-16, 32, 32, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
+    return Array.from(pixels)
+  }
+  pilotMetrics() {
+    return { selected: this.selected, elevationDecoder: 'libwebp-wasm', sunElevationDegrees: THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(this.camera.position.clone().normalize().dot(this.sunLight.position.clone().sub(this.bodies.get(this.selected)!.position).normalize()), -1, 1))), altitudeMeters: this.lastAltitudeMeters, classificationReady: this.surfaces.earth.hasClassification.value > 0, lunarSourceError: this.pilotError, regional: Object.fromEntries([...this.regional].map(([id, layer]) => [id, layer.metrics()])),
+      renderer: { calls: this.renderer.info.render.calls, triangles: this.renderer.info.render.triangles, textures: this.renderer.info.memory.textures, geometries: this.renderer.info.memory.geometries } }
+  }
 
   focus(id: BodyId) {
+    this.pilotAltitude = null
     this.recenterControls(radiusAu(id))
     this.selected = id
     this.origin.copy(vector(id, this.date))
@@ -323,10 +388,10 @@ export class ExplorerScene {
     this.camera.up.set(0, 1, 0)
     this.camera.position.sub(this.controls.target)
     this.controls.target.set(0, 0, 0)
-    this.controls.minDistance = radius * (1 + SURFACE_CLEARANCE)
+    this.controls.minDistance = radius + SURFACE_CLEARANCE
     // Switching from a small moon close-up to a larger body must start outside
     // that body without the collision correction translating the focus target.
-    const clearance = radius * (1 + SURFACE_CLEARANCE)
+    const clearance = radius + SURFACE_CLEARANCE
     if (this.camera.position.length() < clearance) {
       if (this.camera.position.lengthSq() === 0) this.camera.position.set(0, 0, 1)
       this.camera.position.setLength(clearance)
@@ -338,7 +403,7 @@ export class ExplorerScene {
   private rebaseControls() {
     const target = this.controls.target, minDistance = this.controls.minDistance
     this.controls.dispose()
-    this.controls = createCameraOrbit(this.camera, this.renderer.domElement, target, minDistance, this.onControlStart)
+    this.controls = createCameraOrbit(this.camera, this.renderer.domElement, target, minDistance, this.onControlStart, this.hitGround)
   }
 
   private tick = () => {
@@ -370,6 +435,29 @@ export class ExplorerScene {
     const selectedBody = this.bodies.get(this.selected)!
     this.controls.setBody({ id: this.selected, center: selectedBody.position,
       rotation: selectedBody.quaternion, radius: radiusAu(this.selected) }, this.focusDistance === null)
+    const now = performance.now(), viewportHeight = this.container.clientHeight * this.renderer.getPixelRatio()
+    let terrainBody: TerrainBody | null = null
+    for (const [id, layer] of this.terrain) {
+      layer.update(this.camera, viewportHeight, now, this.selected === id)
+      if (layer.active) terrainBody = id
+    }
+    for (const [id, layer] of this.regional) layer.update(this.camera, viewportHeight, now, this.selected === id)
+    if (this.pilotAltitude) {
+      if (now > this.pilotAltitude.until) this.pilotAltitude = null
+      else {
+        const normal = this.pilotAltitude.direction.clone().applyQuaternion(selectedBody.quaternion)
+        const ray = new THREE.Ray(normal.clone().multiplyScalar(radiusAu(this.selected) * 2), normal.clone().negate())
+        const ground = this.hitGround(ray)
+        if (ground) this.camera.position.copy(normal).multiplyScalar(ground.length() + this.pilotAltitude.altitude / 149_597_870_700)
+      }
+    }
+    const collisionSurfaces = bodyOrder.map(id => ({
+      center: this.bodies.get(id)!.position,
+      radius: this.regional.get(id as 'earth' | 'moon')?.cameraSurfaceRadius(this.camera.position)
+        ?? this.terrain.get(id as TerrainBody)?.cameraSurfaceRadius(this.camera.position) ?? radiusAu(id),
+    }))
+    this.lastAltitudeMeters = (this.camera.position.distanceTo(selectedBody.position) - collisionSurfaces[bodyOrder.indexOf(this.selected)].radius) * 149_597_870_700
+    this.controls.minDistance = collisionSurfaces[bodyOrder.indexOf(this.selected)].radius + SURFACE_CLEARANCE
     this.controls.update()
     const near = constrainCamera(
       this.camera.position,
@@ -377,7 +465,7 @@ export class ExplorerScene {
       // Orbit motion follows an arc; its straight chord can cut through the
       // selected globe even though the camera stays outside the surface.
       null,
-      bodyOrder.map(id => ({ center: this.bodies.get(id)!.position, radius: radiusAu(id) })),
+      collisionSurfaces,
     )
     // A collision with another body must not move the selected body's pivot.
     this.controls.target.set(0, 0, 0)
@@ -386,14 +474,31 @@ export class ExplorerScene {
       this.camera.updateProjectionMatrix()
     }
     this.stars.position.copy(this.camera.position)
-    const now = performance.now(), viewportHeight = this.container.clientHeight * this.renderer.getPixelRatio()
-    let terrainBody: TerrainBody | null = null
-    for (const [id, layer] of this.terrain) {
-      layer.update(this.camera, viewportHeight, now, this.selected === id)
-      if (layer.active) terrainBody = id
+    this.surfaceTiles.update(this.camera, viewportHeight, now, this.selected === 'moon' ? 'moon' : this.selected === 'earth' && this.surfaces.earth.clipCount.value > 0 ? 'earth' : terrainBody)
+    const closeTerrain = !!this.regional.get(this.selected as 'earth' | 'moon')?.metrics().ready
+    const shadowWeight = closeTerrain && this.terrainShadows ? 1 - THREE.MathUtils.smoothstep(this.lastAltitudeMeters, 30000, 50000) : 0
+    this.terrainSun.castShadow = shadowWeight > 0
+    this.terrainSun.intensity = 3 * shadowWeight
+    this.sunLight.intensity = 3 * (1 - shadowWeight)
+    if (shadowWeight > 0) {
+      const direction = this.camera.getWorldDirection(new THREE.Vector3())
+      const ground = this.hitGround(new THREE.Ray(this.camera.position.clone(), direction))
+        ?? this.camera.position.clone().normalize().multiplyScalar(radiusAu(this.selected))
+      const extent = THREE.MathUtils.clamp(this.camera.position.distanceTo(ground) * .8, 500 / 149_597_870_700, 50000 / 149_597_870_700)
+      const sunlight = this.sunLight.position.clone().sub(selectedBody.position).normalize()
+      this.terrainSun.target.position.copy(ground)
+      this.terrainSun.position.copy(ground).addScaledVector(sunlight, extent * 3)
+      const shadow = this.terrainSun.shadow.camera
+      shadow.left = shadow.bottom = -extent; shadow.right = shadow.top = extent
+      shadow.near = extent * .01; shadow.far = extent * 8; shadow.updateProjectionMatrix()
     }
-    this.surfaceTiles.update(this.camera, viewportHeight, now, terrainBody)
     this.renderer.render(this.scene, this.camera)
+    const regionalStatus = [...this.regional].map(([id, layer]) => [id, layer.metrics()] as const)
+    const metricsKey = JSON.stringify(regionalStatus)
+    if (metricsKey !== this.pilotMetricsKey) {
+      this.pilotMetricsKey = metricsKey
+      regionalStatus.forEach(([id, metrics]) => this.onPilotStatus?.(id, metrics))
+    }
     const width = this.container.clientWidth, height = this.container.clientHeight
     const markers = bodyOrder.map(id => {
       const mesh = this.bodies.get(id)!
@@ -425,11 +530,15 @@ export class ExplorerScene {
     cancelAnimationFrame(this.frame)
     this.resizeObserver.disconnect()
     this.controls.dispose()
+    this.pilotMetadata.abort()
+    this.regional.forEach(layer => layer.dispose())
+    Object.values(this.surfaces).forEach(s => s.classification.value?.dispose())
     this.surfaceTiles.dispose()
     this.terrain.forEach(layer => layer.dispose())
     this.scene.traverse(object => {
       if (object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Points || object instanceof THREE.Sprite) {
         object.geometry?.dispose()
+        if (object instanceof THREE.Mesh) object.customDepthMaterial?.dispose()
         const materials = Array.isArray(object.material) ? object.material : [object.material]
         materials.forEach(material => {
           if ('map' in material && material.map instanceof THREE.Texture) material.map.dispose()
@@ -437,6 +546,7 @@ export class ExplorerScene {
         })
       }
     })
+    this.terrainSun.shadow.dispose()
     this.renderer.dispose()
     this.renderer.domElement.remove()
   }

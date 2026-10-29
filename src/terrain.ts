@@ -86,11 +86,12 @@ export function terrainChildren({ z, x, y }: TileAddress): TileAddress[] {
 
 /** Input rows run north to south; UVs address the existing global color map. */
 export function terrainGeometry(bounds: TileBounds, heights: Float32Array, size: number,
-  referenceRadius: number, renderRadius: number, exaggeration: number): THREE.BufferGeometry {
+  referenceRadius: number, renderRadius: number, exaggeration: number, origin = new THREE.Vector3()): THREE.BufferGeometry {
   const positions: number[] = [], uvs: number[] = [], indices: number[] = [], coverage: number[] = []
-  const { west, north, span } = bounds
+  const { west, east, north, south } = bounds
+  const span = Math.max(east - west, north - south)
   for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) {
-    const lon = west + span * c / (size - 1), lat = north - span * r / (size - 1)
+    const lon = west + (east - west) * c / (size - 1), lat = north + (south - north) * r / (size - 1)
     const phi = lon * Math.PI / 180, theta = lat * Math.PI / 180
     const height = heights[r * size + c]
     const radius = (referenceRadius + (Number.isFinite(height) ? height : 0) * exaggeration) / renderRadius
@@ -104,7 +105,7 @@ export function terrainGeometry(bounds: TileBounds, heights: Float32Array, size:
     }
   }
   const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions.map((v, i) => v - origin.getComponent(i % 3)), 3))
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
   const normals = Array.from(geometry.getAttribute('normal').array)
@@ -128,10 +129,13 @@ export function terrainGeometry(bounds: TileBounds, heights: Float32Array, size:
     const j = (i + 1) % edge.length, a = edge[i], b = edge[j], c = size * size + i, d = size * size + j
     indices.push(a, b, c, b, d, c)
   }
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions.map((v, i) => v - origin.getComponent(i % 3)), 3))
   geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3))
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
   geometry.setAttribute('terrainCoverage', new THREE.Float32BufferAttribute(coverage, 1))
+  const skirt = new Float32Array(positions.length / 3)
+  skirt.fill(1, size * size)
+  geometry.setAttribute('terrainSkirt', new THREE.BufferAttribute(skirt, 1))
   geometry.setIndex(indices)
   geometry.computeBoundingSphere()
   return geometry

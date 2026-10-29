@@ -1,0 +1,30 @@
+[
+  {
+    "name": "finland",
+    "address": {
+      "z": 14,
+      "x": 9329,
+      "y": 4723
+    },
+    "url": "https://tiles.mapterhorn.com/14/9329/4723.webp",
+    "file": "finland.webp",
+    "sha256": "6b08e18e0f550b358d42bab19cde14c16a4a4a3a7340ba5f9e866b3efdc4e5d6",
+    "rgbaSha256": "15251c8b126f4732f2d105e34a78868ec9046ecb7f366f224094e6010c976663",
+    "min": 33.75,
+    "max": 72.0
+  },
+  {
+    "name": "alps",
+    "address": {
+      "z": 14,
+      "x": 8556,
+      "y": 5791
+    },
+    "url": "https://tiles.mapterhorn.com/14/8556/5791.webp",
+    "file": "alps.webp",
+    "sha256": "08f70fec8011f151ea8d89abd76beb451daa97e44c87bb0b8e83bc5d6eae36ea",
+    "rgbaSha256": "849c5b2682ecd1b0653915e0ab51cfa886b1c4ee853efcd6f39d3380472a558c",
+    "min": 2785.75,
+    "max": 4023.25
+  }
+]

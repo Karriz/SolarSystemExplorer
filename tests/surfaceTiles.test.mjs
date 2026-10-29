@@ -72,7 +72,7 @@ test('provider URL templates use WMTS row/column order and fixed composite image
     assert.match(url, /\/3\/2\/5\.(jpg|jpeg)$/)
     assert.ok(url.startsWith('https://'))
   }
-  assert.match(surfaceTileSources.earth.url({ z: 0, x: 0, y: 0 }), /BlueMarble_ShadedRelief_Bathymetry\/default\/500m/)
+  assert.match(surfaceTileSources.earth.url({ z: 0, x: 0, y: 0 }), /BlueMarble_NextGeneration\/default\/500m/)
 })
 
 function setupLayer() {
@@ -178,4 +178,15 @@ test('loaded children replace parents without overlap and cache eviction respect
   layer.dispose()
   assert.equal(closed, decoded)
   assert.ok(Math.abs(layer.bytes) < 1)
+})
+
+
+test('excluded Earth and Moon imagery never creates overlapping globe patch groups', () => {
+  const bodies=new Map(['earth','moon','mars'].map(id=>[id,new THREE.Mesh(new THREE.SphereGeometry(1),new THREE.MeshStandardMaterial())]))
+  const layer=new GlobeTileLayer(bodies,{capabilities:{getMaxAnisotropy:()=>1}},new Set(['earth','moon']))
+  assert.equal(bodies.get('earth').children.length,0)
+  assert.equal(bodies.get('moon').children.length,0)
+  assert.equal(bodies.get('mars').children.length,1)
+  layer.dispose()
+  for(const body of bodies.values()){body.geometry.dispose();body.material.dispose()}
 })

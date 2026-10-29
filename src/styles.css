@@ -14,3 +14,7 @@
 .terrain-options select:disabled{opacity:.5}
 .info-card{max-height:calc(100dvh - 252px);overflow-y:auto;scrollbar-width:thin}
 @media(max-width:760px){.info-card{max-height:calc(100dvh - 278px)}.terrain-options{flex-wrap:wrap}}
+
+.pilot-places{flex-wrap:wrap}.pilot-places button{font-size:10px;padding:5px 7px}
+
+@media(max-height:600px){.app{min-height:0}}

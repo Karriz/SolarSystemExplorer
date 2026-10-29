@@ -42,7 +42,9 @@ export function tileGeometry(bounds: TileBounds, zoom: number): THREE.SphereGeom
   const subdivisions = Math.max(4, 2 ** Math.ceil(Math.log2(span / 2.25)))
   const step = span / subdivisions
   const geometry = new THREE.SphereGeometry(
-    1.0005 + zoom * .000001,
+    // A few meters of separation on the supported planets stays well below
+    // the 100 m camera floor while avoiding overlap with the base sphere.
+    1 + 1e-6 + zoom * 1e-8,
     Math.max(3, Math.round((east - west) / step)),
     Math.max(2, Math.round((north - south) / step)),
     (west + 180) * DEG, (east - west) * DEG, (90 - north) * DEG, (north - south) * DEG,
@@ -77,12 +79,13 @@ export class GlobeTileLayer {
   constructor(
     bodies: Map<string, THREE.Mesh>,
     renderer: THREE.WebGLRenderer,
+    excludedBodies: ReadonlySet<string> = new Set(),
   ) {
     this.bodies = bodies
     this.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy())
     for (const body of Object.keys(surfaceTileSources) as TileBody[]) {
       const mesh = bodies.get(body)
-      if (!mesh) continue
+      if (!mesh || excludedBodies.has(body)) continue
       const radius = (mesh.geometry as THREE.SphereGeometry).parameters.radius
       const group = new THREE.Group()
       group.name = `${body}-surface-tiles`

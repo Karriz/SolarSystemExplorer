@@ -5,13 +5,18 @@
   "type": "module",
   "scripts": {
     "terrain:build": "sh scripts/terrain-python.sh scripts/build-terrain.py",
+    "terrain:benchmark": "node scripts/benchmark-terrain-pilot.mjs",
+    "terrain:pilot": "sh scripts/terrain-python.sh scripts/build-terrain-pilot.py",
     "terrain:validate": "sh scripts/terrain-python.sh scripts/validate-terrain.py",
     "test": "node --experimental-strip-types tests/run.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "build:app": "tsc -b && vite build --mode app",
+    "preview": "vite preview",
+    "terrain:check-decoder": "node scripts/check-terrain-decoder.mjs"
   },
   "dependencies": {
+    "@jsquash/webp": "^1.5.0",
     "lucide-react": "^1.34.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -22,6 +27,7 @@
     "@types/react-dom": "^19.2.4",
     "@types/three": "^0.185.4",
     "@vitejs/plugin-react": "^5.2.0",
+    "playwright": "^1.62.1",
     "typescript": "^5.9.3",
     "vite": "^7.3.6"
   }

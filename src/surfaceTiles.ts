@@ -22,11 +22,11 @@ export const surfaceTileSources: Record<TileBody, SurfaceTileSource> = {
     url: ({ z, x, y }) => `https://trek.nasa.gov/tiles/Mercury/EQ/Mercury_MESSENGER_MDIS_Basemap_EnhancedColor_Mosaic_Global_665m/1.0.0/default/default028mm/${z}/${y}/${x}.jpg`,
   },
   earth: {
-    label: 'GIBS Blue Marble with bathymetry',
+    label: 'GIBS Blue Marble base color',
     page: 'https://nasa-gibs.github.io/gibs-api-docs/',
     credit: 'NASA/GSFC GIBS / ESDIS',
     tileSize: 512, rootSpan: 288, maxZoom: 7,
-    url: ({ z, x, y }) => `https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/BlueMarble_ShadedRelief_Bathymetry/default/500m/${z}/${y}/${x}.jpeg`,
+    url: ({ z, x, y }) => `https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/BlueMarble_NextGeneration/default/500m/${z}/${y}/${x}.jpeg`,
   },
   moon: {
     label: 'NASA Trek · LRO WAC',

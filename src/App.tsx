@@ -6,6 +6,9 @@ import { textureSources } from './textureSources'
 import { surfaceTileSources, type TileBody } from './surfaceTiles'
 import type { TerrainStatus } from './GlobeTerrainLayer'
 import { isTerrainBody, type TerrainBody } from './terrain'
+import type { RegionalMetrics } from './RegionalTerrainLayer'
+import { earthColorSource } from './earthImagery'
+import { pilotLocations } from './terrainPilot'
 
 const AU_KM = 149_597_870.7
 const DAY_MS = 86_400_000
@@ -31,11 +34,15 @@ export default function App() {
   const [selected, setSelected] = useState<BodyId>('sun')
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
+  const [terrainShadows, setTerrainShadows] = useState(true)
   const [showOrbits, setShowOrbits] = useState(true)
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [regionalStatuses, setRegionalStatuses] = useState<Partial<Record<'earth' | 'moon', RegionalMetrics>>>({})
+  const regionalStatus = regionalStatuses[selected as 'earth' | 'moon']
+  const [surfaceDetail, setSurfaceDetail] = useState(true)
   const [terrainEnabled, setTerrainEnabled] = useState(true)
   const [terrainExaggeration, setTerrainExaggeration] = useState(1)
   const [terrainStatuses, setTerrainStatuses] = useState<Partial<Record<TerrainBody, TerrainStatus>>>({})
@@ -52,9 +59,15 @@ export default function App() {
         element.style.visibility = marker.visible ? 'visible' : 'hidden'
         if (marker.visible) element.style.transform = `translate3d(${marker.x - 12}px, ${marker.y - 12}px, 0)`
       }
-    }, status => setTerrainStatuses(previous => ({ ...previous, [status.body]: status })))
+    }, status => setTerrainStatuses(previous => ({ ...previous, [status.body]: status })),
+      (id, metrics) => setRegionalStatuses(previous => ({ ...previous, [id]: metrics })))
     explorer.setDate(dateRef.current)
     sceneRef.current = explorer
+    // Explicitly opt-in diagnostic bridge for repeatable pilot browser tests.
+    if (new URLSearchParams(location.search).has('terrainPilot')) {
+      Object.assign(window, { terrainPilot: { point: (lat: number, lon: number, altitude?: number) => { explorer.surfaceLocation('earth', lat, lon, altitude); setSelected('earth') }, visit: (id: string, altitude?: number) => { explorer.pilot(id, altitude); const p = pilotLocations.find(p => p.id === id); if (p) setSelected(p.body) },
+        sample: () => explorer.pilotImageSample(), metrics: () => explorer.pilotMetrics(), date: (iso: string) => { const next = new Date(iso); if (!Number.isNaN(next.getTime())) { explorer.setDate(next); dateRef.current = next; setDate(next) } }, detail: (enabled: boolean) => { explorer.setSurfaceDetail(enabled); setSurfaceDetail(enabled) } } })
+    }
     const markerLayer = markerLayerRef.current
     const forwardWheel = (event: WheelEvent) => {
       event.preventDefault()
@@ -73,7 +86,7 @@ export default function App() {
       }))
     }
     markerLayer?.addEventListener('wheel', forwardWheel, { passive: false })
-    return () => { markerLayer?.removeEventListener('wheel', forwardWheel); explorer.dispose(); sceneRef.current = null }
+    return () => { markerLayer?.removeEventListener('wheel', forwardWheel); explorer.dispose(); sceneRef.current = null; if ('terrainPilot' in window) delete (window as unknown as Record<string, unknown>).terrainPilot }
   }, [])
 
   useEffect(() => {
@@ -142,7 +155,7 @@ export default function App() {
             {selected === id && <span className="row-active-mark" />}
           </button>)}
         </div>
-        <div className="sidebar-bottom"><span className="tiny-orbit" /> <span>Left drag to orbit <b>·</b> Right drag to tilt <b>·</b> Scroll to zoom</span></div>
+        <div className="sidebar-bottom"><span className="tiny-orbit" /> <span>Left drag to orbit <b>·</b> Right drag to turn / tilt nearby <b>·</b> Scroll to zoom</span></div>
       </aside>
 
       <div className="marker-layer" ref={markerLayerRef}>
@@ -167,14 +180,25 @@ export default function App() {
         <div className="info-stat"><span>POSITION</span><strong>{distanceLabel(selected, date)}</strong></div>
         {selected !== 'sun' && <div className="surface-source">Rotation: <a href={selected === 'earth' ? 'https://aa.usno.navy.mil/faq/GAST' : 'https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc'} target="_blank" rel="noreferrer">{selected === 'earth' ? 'USNO sidereal time' : 'JPL NAIF planetary constants'}</a> · approximate</div>}
         {textureSources[selected] && <div className="surface-source">Surface: <a href={textureSources[selected]!.page} target="_blank" rel="noreferrer">{textureSources[selected]!.label}</a> · {textureSources[selected]!.credit}</div>}
-        {selected in surfaceTileSources && <div className="surface-source">Detail: <a href={surfaceTileSources[selected as TileBody].page} target="_blank" rel="noreferrer">{surfaceTileSources[selected as TileBody].label}</a> · {surfaceTileSources[selected as TileBody].credit}</div>}
-        {isTerrainBody(selected) && <div className="terrain-controls">
+        {selected !== 'earth' && selected !== 'moon' && selected in surfaceTileSources && <div className="surface-source">Detail: <a href={surfaceTileSources[selected as TileBody].page} target="_blank" rel="noreferrer">{surfaceTileSources[selected as TileBody].label}</a> · {surfaceTileSources[selected as TileBody].credit}</div>}
+        {(selected === 'earth' || selected === 'moon') && <div className="terrain-controls">
+          <div className="surface-source">Explore measured terrain</div>
+          <div role="status" className="surface-source">{regionalStatus?.ready ? 'Measured terrain' : regionalStatus?.failed ? 'Regional detail unavailable · showing fallback' : regionalStatus?.requests ? 'Loading regional relief…' : selected === 'earth' ? 'Terrain loads as you explore' : 'Regional relief at the location below'}</div>
+          <div className="terrain-options pilot-places">{pilotLocations.filter(p => p.body === selected).map(p => <button key={p.id} onClick={() => sceneRef.current?.pilot(p.id)}>{p.name}</button>)}</div>
+          {selected === 'moon' && <div className="terrain-options"><button aria-pressed={surfaceDetail} onClick={() => { sceneRef.current?.setSurfaceDetail(!surfaceDetail); setSurfaceDetail(!surfaceDetail) }}>Surface detail {surfaceDetail ? 'on' : 'off'}</button></div>}
+          {selected === 'moon' && surfaceDetail && <div className="surface-source">Fine surface detail is procedural.</div>}
+          {selected === 'moon' && regionalStatus?.ready && <div className="surface-source">Elevation: <a href="https://pgda.gsfc.nasa.gov/products/54" target="_blank" rel="noreferrer">SLDEM2015 · ~118 m sampling</a></div>}
+          {selected === 'earth' && <div className="surface-source">Color: <a href={earthColorSource.page} target="_blank" rel="noreferrer">{earthColorSource.label}</a> · {regionalStatus?.imagery?.ready ? 'streamed imagery' : 'globe fallback'} · © ESA WorldCover / modified Copernicus Sentinel data 2021</div>}
+          {selected === 'earth' && <div className="surface-source">Elevation: <a href="https://mapterhorn.com/attribution/" target="_blank" rel="noreferrer">© Mapterhorn</a> · streamed terrain</div>}
+        </div>}
+        {(isTerrainBody(selected) || selected === 'earth') && <div className="terrain-controls">
           <div className="terrain-options">
             <button aria-pressed={terrainEnabled} onClick={() => { sceneRef.current?.setTerrain(!terrainEnabled); setTerrainEnabled(!terrainEnabled) }}>Terrain {terrainEnabled ? 'on' : 'off'}</button>
+            {(selected === 'earth' || selected === 'moon') && <button aria-pressed={terrainShadows} disabled={!terrainEnabled} onClick={() => { sceneRef.current?.setTerrainShadows(!terrainShadows); setTerrainShadows(!terrainShadows) }}>Shadows {terrainShadows ? 'on' : 'off'}</button>}
             <label>Relief <select aria-label="Terrain relief" value={terrainExaggeration} disabled={!terrainEnabled} onChange={e => { const value = Number(e.target.value); sceneRef.current?.setTerrainExaggeration(value); setTerrainExaggeration(value) }}><option value={1}>True scale</option><option value={4}>4× exaggerated</option></select></label>
           </div>
-          <div role="status" className="surface-source">{terrainStatus.state === 'ready' ? (terrainStatus.failedTiles ? 'Terrain on · some detail unavailable' : `Measured relief · ${terrainStatus.source && terrainStatus.source.resolution < 1000 ? `${Math.round(terrainStatus.source.resolution)} m` : `${((terrainStatus.source?.resolution ?? 0) / 1000).toFixed(1)} km`} source grid`) : terrainStatus.state === 'unavailable' ? 'Terrain unavailable · showing imagery' : terrainStatus.state === 'off' ? 'Terrain off · showing imagery' : terrainStatus.failedTiles ? 'Terrain unavailable · retrying' : 'Loading terrain…'}</div>
-          {terrainStatus.source && <div className="surface-source">Elevation: <a href={terrainStatus.source.url} target="_blank" rel="noreferrer">{terrainStatus.source.credit}</a></div>}
+          {selected !== 'earth' && !regionalStatus?.ready && <div role="status" className="surface-source">{terrainStatus.state === 'ready' ? (terrainStatus.failedTiles ? 'Terrain on · some detail unavailable' : `Measured relief · ${terrainStatus.source && terrainStatus.source.resolution < 1000 ? `${Math.round(terrainStatus.source.resolution)} m` : `${((terrainStatus.source?.resolution ?? 0) / 1000).toFixed(1)} km`} source grid`) : terrainStatus.state === 'unavailable' ? 'Terrain unavailable · showing imagery' : terrainStatus.state === 'off' ? 'Terrain off · showing imagery' : terrainStatus.failedTiles ? 'Terrain unavailable · retrying' : 'Loading terrain…'}</div>}
+          {terrainStatus.source && !regionalStatus?.ready && <div className="surface-source">Elevation: <a href={terrainStatus.source.url} target="_blank" rel="noreferrer">{terrainStatus.source.credit}</a></div>}
           {terrainStatus.source?.gaps && <div className="surface-source">Gray terrain marks gaps in elevation coverage.</div>}
           {terrainStatus.source?.approximate && <div className="surface-source">Heights above the Martian areoid, shown on a mean-radius sphere.</div>}
         </div>}

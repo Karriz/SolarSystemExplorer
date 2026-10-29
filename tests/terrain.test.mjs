@@ -144,6 +144,40 @@ function setup(t, decoder = { decode: async () => new Float32Array(65 * 65), dis
   return { layer, body, camera, status }
 }
 
+test('close camera envelope includes maximum terrain height and exaggeration before tiles load', async t => {
+  const { layer } = setup(t)
+  assert.equal(layer.cameraSurfaceRadius(new THREE.Vector3(0, 0, 2)), 1)
+  await flush()
+  assert.equal(layer.cameraSurfaceRadius(new THREE.Vector3(0, 0, 2)), 1 + 1500 / 1737400)
+  layer.setExaggeration(4)
+  assert.equal(layer.cameraSurfaceRadius(new THREE.Vector3(0, 0, 2)), 1 + 6000 / 1737400)
+  layer.setEnabled(false)
+  assert.equal(layer.cameraSurfaceRadius(new THREE.Vector3(0, 0, 2)), 1)
+})
+
+test('ground picking uses visible terrain elevation and stops when terrain is disabled', async t => {
+  const decoder = { decode: async () => new Float32Array(65 * 65).fill(1000), dispose() {} }
+  const { layer, camera } = setup(t, decoder)
+  const ray = new THREE.Ray(new THREE.Vector3(0, 0, 2), new THREE.Vector3(0, 0, -1))
+  assert.equal(layer.hitGround(ray), null)
+  await flush()
+  layer.update(camera, 900, performance.now(), true)
+  await flush()
+  layer.update(camera, 900, performance.now() + 200, true)
+  const ground = layer.hitGround(ray)
+  assert.ok(ground)
+  assert.ok(Math.abs(ground.length() - (1 + 1000 / 1737400)) < 1e-6)
+  const localRadius = layer.cameraSurfaceRadius(new THREE.Vector3(0, 0, 1.01))
+  assert.ok(Math.abs(localRadius - ground.length()) < 1e-10)
+  // The local floor follows rendered ground instead of the global maximum.
+  assert.ok(localRadius < layer.cameraSurfaceRadius(new THREE.Vector3(0, 0, 2)))
+  layer.setExaggeration(4)
+  const exaggerated = layer.cameraSurfaceRadius(new THREE.Vector3(0, 0, 1.01))
+  assert.ok(Math.abs(exaggerated - (1 + 4000 / 1737400)) < 1e-6)
+  layer.setEnabled(false)
+  assert.equal(layer.hitGround(ray), null)
+})
+
 test('terrain keeps the base until roots load, replaces parents without overlap, and toggles cleanly', async t => {
   const { layer, body, camera } = setup(t)
   await flush()

@@ -1,7 +1,9 @@
 import { Vector3 } from 'three'
 
 export type CameraSurface = { center: Vector3; radius: number }
-export const SURFACE_CLEARANCE = .05
+export const SURFACE_CLEARANCE_METERS = 100
+// Scene coordinates use astronomical units.
+export const SURFACE_CLEARANCE = SURFACE_CLEARANCE_METERS / 149_597_870_700
 
 // Keep both the camera and its path outside the globe, even when the orbit
 // target has moved off-center through panning or zoom-to-cursor.
@@ -33,7 +35,7 @@ export function constrainCamera(
   }
   for (const { center, radius } of surfaces) {
     const offset = position.clone().sub(center)
-    const safeRadius = radius * (1 + SURFACE_CLEARANCE)
+    const safeRadius = radius + SURFACE_CLEARANCE
     if (offset.lengthSq() < safeRadius * safeRadius) {
       if (offset.lengthSq() === 0) offset.copy(position).sub(target)
       if (offset.lengthSq() === 0) offset.set(0, 0, 1)

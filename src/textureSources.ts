@@ -26,12 +26,12 @@ export const textureSources: Partial<Record<BodyId, TextureSource>> = {
     note: 'Radar surface composite with filled imagery gaps, not a visible-light or cloud image.',
   },
   earth: {
-    file: 'earth.jpg',
-    label: 'Blue Marble with bathymetry',
-    page: 'https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-topography-bathymetry/',
-    download: 'https://assets.science.nasa.gov/content/dam/science/esd/eo/images/bmng/bmng-topography-bathymetry/october/world.topo.bathy.200410.3x5400x2700.jpg',
+    file: 'earth-base.jpg',
+    label: 'Blue Marble base color',
+    page: 'https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-map/',
+    download: 'https://assets.science.nasa.gov/content/dam/science/esd/eo/images/bmng/bmng-base/october/world.200410.3x5400x2700.jpg',
     credit: 'NASA Earth Observatory',
-    note: 'October 2004 monthly composite with shaded topography and bathymetry, 5400 × 2700 equirectangular JPEG.',
+    note: 'October 2004 monthly base composite without added relief/bathymetry shading; 5400 × 2700 equirectangular JPEG. Not a calibrated, entirely shadow-free albedo product.',
   },
   moon: {
     file: 'moon.jpg',

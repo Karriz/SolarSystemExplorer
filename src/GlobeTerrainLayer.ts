@@ -5,6 +5,7 @@ import type { TileAddress } from './surfaceTiles.ts'
 import { TerrainDecoder } from './TerrainDecoder.ts'
 import { TerrainImagery } from './TerrainImagery.ts'
 import { bodyInfo } from './ephemeris.ts'
+import { configureSurfaceMaterial, configureTerrainDepth, type SurfaceState } from './surfaceMaterial.ts'
 
 const MAX_REQUESTS = 4
 const MAX_BYTES = 48 * 1024 * 1024
@@ -44,10 +45,12 @@ export class GlobeTerrainLayer {
   private onStatus: (status: TerrainStatus) => void
   private baseUrl: string
   private createDecoder: () => Decoder
+  private surface?: SurfaceState
 
   constructor(body: THREE.Mesh, onStatus: (status: TerrainStatus) => void,
-    baseUrl: string, createDecoder: () => Decoder = () => new TerrainDecoder(), bodyId: TerrainBody = 'moon') {
+    baseUrl: string, createDecoder: () => Decoder = () => new TerrainDecoder(), bodyId: TerrainBody = 'moon', surface?: SurfaceState) {
     this.bodyId = bodyId
+    this.surface = surface
     this.imagery = new TerrainImagery(bodyId)
     this.body = body
     this.onStatus = onStatus
@@ -67,6 +70,7 @@ export class GlobeTerrainLayer {
       shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb = mix(vec3(0.22), diffuseColor.rgb, step(0.999, vTerrainCoverage));')
     }
     this.material.customProgramCacheKey = () => 'terrain-coverage-v1'
+    if (surface) configureSurfaceMaterial(this.material, surface, this.radiusMeters, 1, true)
     this.report()
     void this.loadManifest()
   }
@@ -107,6 +111,30 @@ export class GlobeTerrainLayer {
       this.imagery.update([], performance.now())
     }
     this.report()
+  }
+
+  /** Use the rendered ground below the camera at close range, with a
+   * conservative envelope until terrain is available at that location. */
+  cameraSurfaceRadius(position: THREE.Vector3): number {
+    const radius = this.group.scale.x
+    if (!this.enabled || !this.manifest) return radius
+    const center = this.body.getWorldPosition(new THREE.Vector3())
+    const direction = position.clone().sub(center).normalize()
+    if (position.distanceTo(center) < radius * 1.15) {
+      const origin = center.clone().addScaledVector(direction, radius * 2)
+      const ground = this.hitGround(new THREE.Ray(origin, direction.negate()))
+      if (ground) return ground.distanceTo(center)
+    }
+    return radius * (1 + Math.max(0, this.manifest.maxHeightMeters) * this.exaggeration / this.radiusMeters)
+  }
+
+  hitGround(ray: THREE.Ray): THREE.Vector3 | null {
+    if (!this.active || !this.enabled) return null
+    this.group.updateWorldMatrix(true, true)
+    const picker = new THREE.Raycaster()
+    picker.ray.copy(ray)
+    const meshes = [...this.nodes.values()].flatMap(node => node.mesh?.visible ? [node.mesh] : [])
+    return picker.intersectObjects(meshes, false)[0]?.point ?? null
   }
 
   setExaggeration(value: number) {
@@ -159,7 +187,7 @@ export class GlobeTerrainLayer {
     const localCamera = this.body.worldToLocal(camera.position.clone()).divideScalar(this.group.scale.x)
     const focal = viewportHeight / (2 * Math.tan(camera.fov * Math.PI / 360))
     const distance = localCamera.length()
-    if (distance <= 1 || focal * 2 / Math.max(1, distance - 1) < 32) {
+    if (distance <= 1 + this.manifest.minHeightMeters * this.exaggeration / this.radiusMeters || focal * 2 / Math.max(1, distance - 1) < 32) {
       this.setActive(false)
       for (const node of this.nodes.values()) node.request?.abort()
       this.imagery.update([], now)
@@ -211,9 +239,9 @@ export class GlobeTerrainLayer {
     }
     roots.forEach(show)
     const visible = [...this.nodes.values()].filter(n => n.mesh?.visible)
-    this.imagery.update(visible.map(n => n.address), now)
+    this.imagery.update(this.bodyId === 'moon' ? [] : visible.map(n => n.address), now)
     for (const node of this.nodes.values()) if (node.mesh) {
-      const map = this.imagery.texture(node.address) ?? this.baseMaterial.map
+      const map = (this.bodyId === 'moon' ? undefined : this.imagery.texture(node.address)) ?? this.baseMaterial.map
       const material = node.mesh.material
       if (material.map !== map) {
         const hadMap = !!material.map
@@ -344,6 +372,13 @@ export class GlobeTerrainLayer {
       node.mesh.material.customProgramCacheKey = this.material.customProgramCacheKey
       node.mesh.name = `${this.bodyId}-terrain/${node.key}`
       node.mesh.visible = false
+      if (this.surface) {
+        const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })
+      node.mesh.customDepthMaterial = depth
+        configureTerrainDepth(depth, this.surface, this.radiusMeters, true)
+      }
+      node.mesh.castShadow = true
+      node.mesh.receiveShadow = true
       this.group.add(node.mesh)
       const geometry = node.mesh.geometry
       const actual = heights.byteLength + Object.values(geometry.attributes).reduce((sum, a) => sum + a.array.byteLength * 2, 0)
@@ -365,6 +400,7 @@ export class GlobeTerrainLayer {
 
   private release(node: Node) {
     node.mesh?.removeFromParent()
+    node.mesh?.customDepthMaterial?.dispose()
     node.mesh?.geometry.dispose()
     node.mesh?.material.dispose()
     node.mesh = undefined
