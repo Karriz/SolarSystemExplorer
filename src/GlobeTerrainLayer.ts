@@ -16,6 +16,9 @@ const MAX_REQUESTS = 4
 const MAX_BYTES = 48 * 1024 * 1024
 const MAX_LEAVES = 48
 const RETRY_MS = 30_000
+/** Low-poly lunar style: refine until a mesh facet covers about this many
+ * pixels. Below that scale the surface reads as flat-shaded facet geometry. */
+const MOON_FACET_PIXELS = 2
 export type TerrainStatus = { body: TerrainBody; state: 'loading' | 'ready' | 'unavailable' | 'off'; loadedTiles: number; failedTiles: number; source?: { resolution: number; credit: string; url: string; gaps: boolean; approximate: boolean } }
 type Node = { key: string; info: TerrainTileInfo; address: TileAddress; sphere: THREE.Sphere; box?: THREE.Box3; lastUsed: number; retryAt: number;
   bytes: number; request?: AbortController; heights?: Float32Array; mesh?: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>; edge?: TerrainEdge }
@@ -69,6 +72,8 @@ export class GlobeTerrainLayer {
     this.createDecoder = createDecoder
     this.baseMaterial = body.material as THREE.MeshStandardMaterial
     this.material = this.baseMaterial.clone()
+    // The lunar surface renders flat-shaded facets; other bodies stay smooth.
+    if (bodyId === 'moon') this.material.flatShading = true
     this.radiusMeters = bodyInfo[bodyId].radiusKm * 1000
     const radius = (body.geometry as THREE.SphereGeometry).parameters.radius
     this.group.name = `${bodyId}-terrain`
@@ -82,7 +87,7 @@ export class GlobeTerrainLayer {
     }
     this.material.customProgramCacheKey = () => 'terrain-coverage-v1'
     if (surface) configureSurfaceMaterial(this.material, surface, this.radiusMeters, 1, true)
-    if (surface && bodyId === 'moon') { this.wacGlobal = new MoonWacGlobal(new URL('moon/wac643-304ppd-v1/', baseUrl).href); this.wacGlobal.configure(this.material); this.wacGlobal.setEnabled(true) }
+    if (surface && bodyId === 'moon') { this.wacGlobal = new MoonWacGlobal(new URL('moon/wac643-304ppd-v1/', baseUrl).href); this.wacGlobal.configure(this.material) }
     this.report()
     void this.loadManifest()
   }
@@ -260,8 +265,12 @@ export class GlobeTerrainLayer {
       const geometryError = focal * node.info.error * density * density * this.exaggeration / this.radiusMeters / nearest
       // Flat terrain still needs finer patches to carry sharper imagery.
       const imageryError = this.bodyId === 'venus' ? 0
-        : focal * terrainBounds(node.address).span * Math.PI / 180 / nearest / 256 * 2 / 1.35
-      return Math.max(geometryError, imageryError)
+        : focal * bounds.span * Math.PI / 180 / nearest / 256 * 2 / 1.35
+      // The Moon refines to a target projected facet size rather than
+      // subpixel measured error: close-range believability comes from
+      // bounded procedural synthesis, not from finer measured meshes.
+      const facetError = focal * bounds.span * Math.PI / 180 / (this.meshSize(node.address) - 1) / nearest / MOON_FACET_PIXELS
+      return this.bodyId === 'moon' ? facetError : Math.max(geometryError, imageryError)
     }
     const want = (node: Node) => { this.wanted.add(node.key); node.lastUsed = now }
     const roots = [0, 1].map(x => this.getNode({ z: 0, x, y: 0 }))

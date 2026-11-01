@@ -175,7 +175,7 @@ export class ExplorerScene {
       const geometry = new THREE.SphereGeometry(radius, id === 'sun' ? 96 : 128, 96)
       const material = id === 'sun'
         ? new THREE.MeshBasicMaterial({ color: '#ffda87' })
-        : new THREE.MeshStandardMaterial({ map: makeTexture(id), roughness: 1, metalness: 0 })
+        : new THREE.MeshStandardMaterial({ map: makeTexture(id), roughness: 1, metalness: 0, flatShading: id === 'moon' })
       if (id === 'earth' || id === 'moon') configureSurfaceMaterial(material, this.surfaces[id], bodyInfo[id].radiusKm * 1000, 1 / radius, true)
       const mesh = new THREE.Mesh(geometry, material)
       mesh.castShadow = id !== 'earth'
