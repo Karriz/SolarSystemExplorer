@@ -47,6 +47,36 @@ test('shadow target remains continuous when the view center crosses from ground 
   assert.ok(Math.abs(before.light.shadow.camera.right - after.light.shadow.camera.right) * AU < 10)
 })
 
+test('pitching up preserves coverage and sampling of shadows already visible on crater terrain', () => {
+  const before = view(100, 45)
+  // Receivers several km away were dropped by the old 1.5 km view fitting.
+  const receivers = [new THREE.Vector3(8000, 0, 12000), new THREE.Vector3(-18000, -3000, 22000)]
+    .map(p => p.divideScalar(AU).add(before.ground))
+  for (const tilt of [60, 75, 85, 89.9, 90.1, 100]) {
+    const after = view(100, tilt)
+    assert.deepEqual(after.light.shadow.matrix.elements, before.light.shadow.matrix.elements,
+      'rotation alone changed the shadow map')
+    for (const point of receivers) {
+      const uv = point.clone().applyMatrix4(after.light.shadow.matrix)
+      assert.ok(uv.x > .08 && uv.x < .92 && uv.y > .08 && uv.y < .92 && uv.z > 0 && uv.z < 1,
+        'previously visible crater shadow lost coverage')
+    }
+  }
+})
+
+test('grazing sunlight includes upstream casters beyond the former fixed depth margin', () => {
+  const { ground, camera, light } = view(100, 85)
+  const sunlight = new THREE.Vector3(1, .01, 0).normalize()
+  fitTerrainShadow(light, camera, ground, sunlight, 100)
+  light.updateMatrixWorld(); light.target.updateMatrixWorld(); light.shadow.updateMatrices(light)
+  // This point remains inside the Moon's 4x relief envelope and projects onto
+  // the receiver, but was clipped by the old 51.5 km light offset.
+  const caster = ground.clone().addScaledVector(sunlight, 200000 / AU)
+  assert.ok(caster.length() * AU < 1737400 + 40000)
+  const uv = caster.applyMatrix4(light.shadow.matrix)
+  assert.ok(uv.z > 0 && uv.z < 1, 'sunward crater rim clipped from shadow pass')
+})
+
 test('local shadow edge fade composes with material shaders and leaves point shadows intact', () => {
   const material = new THREE.MeshStandardMaterial()
   material.onBeforeCompile = shader => { shader.uniforms.existing = { value: 1 } }

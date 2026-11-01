@@ -507,7 +507,8 @@ export class ExplorerScene {
       const ground = this.hitGround(new THREE.Ray(this.camera.position.clone(), inward))
         ?? this.camera.position.clone().addScaledVector(inward, Math.max(100, this.lastAltitudeMeters) / 149_597_870_700)
       const sunlight = this.sunLight.position.clone().sub(selectedBody.position).normalize()
-      fitTerrainShadow(this.terrainSun, this.camera, ground, sunlight, this.lastAltitudeMeters)
+      fitTerrainShadow(this.terrainSun, this.camera, ground, sunlight, this.lastAltitudeMeters,
+        selectedBody.position, radiusAu(this.selected))
     }
     this.renderer.render(this.scene, this.camera)
     const regionalStatus = [...this.regional].map(([id, layer]) => [id, layer.metrics()] as const)

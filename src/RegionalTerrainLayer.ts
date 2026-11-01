@@ -348,7 +348,7 @@ export class RegionalTerrainLayer {
         if (this.bodyId === 'moon') configureMoonTerrainDepth(depth, this.state, this.radiusMeters, false, node.origin, this.moonCamera)
         else configureTerrainDepth(depth, this.state, this.radiusMeters, false, node.origin)
       }
-      node.mesh.castShadow = true; node.mesh.receiveShadow = true; node.mesh.visible = false
+      node.mesh.castShadow = false; node.mesh.receiveShadow = true; node.mesh.visible = false
       this.group.add(node.mesh)
       this.buildMs += performance.now() - started
       node.meshBytes = this.geometryBytes(node)

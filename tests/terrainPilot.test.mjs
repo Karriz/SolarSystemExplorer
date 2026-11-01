@@ -208,7 +208,7 @@ test('Earth imagery and shadows preserve geometry-derived normals and measured h
   layer.update(camera,900,performance.now(),true);await flush()
   layer.update(camera,900,performance.now()+200,true)
   const mesh=[...layer.nodes.values()].find(n=>n.mesh?.visible).mesh
-  assert.equal(mesh.castShadow,true);assert.equal(mesh.receiveShadow,true)
+  assert.equal(mesh.castShadow,false);assert.equal(mesh.receiveShadow,true)
   assert.ok(mesh.customDepthMaterial)
   const normal=new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.normal,32*65+32)
   const radial=new THREE.Vector3().fromBufferAttribute(mesh.geometry.attributes.position,32*65+32).add(mesh.position).normalize()

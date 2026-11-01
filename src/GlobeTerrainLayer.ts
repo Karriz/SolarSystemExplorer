@@ -563,7 +563,8 @@ export class GlobeTerrainLayer {
       // too small for a reliable extra frustum test.
       node.mesh.frustumCulled = false
       if (this.surface) node.mesh.customDepthMaterial = this.moonDepthMaterial()
-      node.mesh.castShadow = true
+      // Terrain receives shadows but does not cast onto itself.
+      node.mesh.castShadow = false
       node.mesh.receiveShadow = true
       this.group.add(node.mesh)
       const geometry = node.mesh.geometry
