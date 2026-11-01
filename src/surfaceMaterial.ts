@@ -8,12 +8,15 @@ export type SurfaceState = {
   detailMap: { value: THREE.Texture | null }; detailMapReady: { value: number }
   mediumDetailMap: { value: THREE.Texture | null }; mediumDetailReady: { value: number }
   classification: { value: THREE.Texture | null }; classBounds: { value: THREE.Vector4 }; hasClassification: { value: number }
+  /** 1 applies the Moon's adaptive color sharpen; 0 keeps the hardware texture filter. */
+  colorSharpen: { value: number }
 }
 export function surfaceState(): SurfaceState {
   return { detail: { value: 1 }, detailMap: { value: null }, detailMapReady: { value: 0 },
     mediumDetailMap: { value: null }, mediumDetailReady: { value: 0 },
     clips: { value: Array.from({ length: MAX_SURFACE_CLIPS }, () => new THREE.Vector4()) }, clipCount: { value: 0 },
-    classification: { value: null }, classBounds: { value: new THREE.Vector4() }, hasClassification: { value: 0 } }
+    classification: { value: null }, classBounds: { value: new THREE.Vector4() }, hasClassification: { value: 0 },
+    colorSharpen: { value: 1 } }
 }
 
 /** Shared body-fixed detail, with stable regional mean color. Coverage clipping

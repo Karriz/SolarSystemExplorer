@@ -13,6 +13,56 @@ const DETAIL_NEAR_METERS = 300
 const DETAIL_FAR_METERS = 3000
 const MEDIUM_NEAR_METERS = 2500
 const MEDIUM_FAR_METERS = 18000
+/** Screen pixels per color texel. Bilinear looks soft just above one pixel
+ * and becomes a flat block after a couple of dozen; sharpen only between. */
+export const MOON_COLOR_SHARPEN = { riseStart: 1.15, riseEnd: 2.2, fallStart: 10, fallEnd: 24, limit: 0.5, strength: 1 }
+const glslFloat = (value: number) => Number.isInteger(value) ? `${value}.0` : String(value)
+
+function smoothstep(edge0: number, edge1: number, x: number) {
+  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)))
+  return t * t * (3 - 2 * t)
+}
+
+/** 0 outside the mid-zoom window, 1 where a magnified color texel is soft. */
+export function moonColorSharpenWeight(pixelsPerTexel: number): number {
+  const { riseStart, riseEnd, fallStart, fallEnd } = MOON_COLOR_SHARPEN
+  return smoothstep(riseStart, riseEnd, pixelsPerTexel) * (1 - smoothstep(fallStart, fallEnd, pixelsPerTexel))
+}
+
+/** Bounded cross unsharp of the color map. Flat albedo is unchanged; the
+ * residual cannot exceed half the local contrast, so crater rims do not grow
+ * a bright halo. Hardware mips stay in charge when the map is minified. */
+function moonColorSharpenChunk() {
+  const { riseStart, riseEnd, fallStart, fallEnd, limit, strength } = MOON_COLOR_SHARPEN
+  return `#ifdef USE_MAP
+        vec4 moonColor = texture2D(map, vMapUv);
+        vec2 moonTexel = 1.0 / vec2(textureSize(map, 0));
+        vec2 moonUvDx = dFdx(vMapUv);
+        vec2 moonUvDy = dFdy(vMapUv);
+        float moonMagX = moonTexel.x / max(length(vec2(moonUvDx.x, moonUvDy.x)), 1.0e-8);
+        float moonMagY = moonTexel.y / max(length(vec2(moonUvDx.y, moonUvDy.y)), 1.0e-8);
+        float moonSharpX = smoothstep(${glslFloat(riseStart)}, ${glslFloat(riseEnd)}, moonMagX) * (1.0 - smoothstep(${glslFloat(fallStart)}, ${glslFloat(fallEnd)}, moonMagX));
+        float moonSharpY = smoothstep(${glslFloat(riseStart)}, ${glslFloat(riseEnd)}, moonMagY) * (1.0 - smoothstep(${glslFloat(fallStart)}, ${glslFloat(fallEnd)}, moonMagY));
+        float moonSharp = max(moonSharpX, moonSharpY) * moonColorSharpen;
+        if (moonSharp > 0.001) {
+          vec3 moonEast = texture2D(map, vMapUv + vec2(moonTexel.x, 0.0)).rgb;
+          vec3 moonWest = texture2D(map, vMapUv - vec2(moonTexel.x, 0.0)).rgb;
+          vec3 moonNorth = texture2D(map, vMapUv + vec2(0.0, moonTexel.y)).rgb;
+          vec3 moonSouth = texture2D(map, vMapUv - vec2(0.0, moonTexel.y)).rgb;
+          vec3 moonCenter = moonColor.rgb;
+          vec3 moonMin = min(moonCenter, min(min(moonEast, moonWest), min(moonNorth, moonSouth)));
+          vec3 moonMax = max(moonCenter, max(max(moonEast, moonWest), max(moonNorth, moonSouth)));
+          vec3 moonBlur = ((moonEast + moonWest) * moonSharpX + (moonNorth + moonSouth) * moonSharpY)
+            / max(2.0 * (moonSharpX + moonSharpY), 1.0e-4);
+          vec3 moonDelta = moonCenter - moonBlur;
+          vec3 moonLimit = vec3(${glslFloat(limit)}) * max(abs(moonCenter - moonMin), abs(moonMax - moonCenter));
+          moonDelta = clamp(moonDelta, -moonLimit, moonLimit);
+          moonColor.rgb = clamp(moonCenter + moonDelta * (${glslFloat(strength)} * moonSharp), 0.0, 1.0);
+        }
+        diffuseColor *= moonColor;
+        #endif`
+}
+
 /** Shared, mipmapped normal/roughness textures supply fine and medium material
  * detail. Triplanar body-fixed sampling avoids seams and polar stretching.
  * It never displaces the measured mesh or runs a procedural field per pixel. */
@@ -27,7 +77,7 @@ export function configureMoonSurfaceMaterial(material: THREE.Material, state: Su
     })
     const shaded = shader.fragmentShader.includes('#include <normal_fragment_maps>')
     if (shaded) Object.assign(shader.uniforms, { moonDetailMap: state.detailMap, moonDetailReady: state.detailMapReady,
-      moonMediumMap: state.mediumDetailMap, moonMediumReady: state.mediumDetailReady })
+      moonMediumMap: state.mediumDetailMap, moonMediumReady: state.mediumDetailReady, moonColorSharpen: state.colorSharpen })
     if (clip) Object.assign(shader.uniforms, { surfaceClips: state.clips, surfaceClipCount: state.clipCount })
     shader.vertexShader = `varying float vMoonFade; varying float vMoonMediumFade; varying vec3 vMoonDir; uniform vec3 moonCamera; uniform vec3 moonOrigin; uniform float moonMetersPerUnit; uniform float moonDetail;
       ${shader.vertexShader}`
@@ -50,9 +100,13 @@ export function configureMoonSurfaceMaterial(material: THREE.Material, state: Su
     if (clip) shader.fragmentShader = shader.fragmentShader.replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
       vec2 clipLonLat = surfaceLonLat();
       for (int i = 0; i < ${MAX_SURFACE_CLIPS}; i++) { if (i >= surfaceClipCount) break; if (surfaceInside(clipLonLat, surfaceClips[i])) discard; }`)
+    if (shaded && shader.fragmentShader.includes('#include <map_fragment>')) {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', moonColorSharpenChunk())
+    }
     if (shaded) {
       shader.fragmentShader = `uniform sampler2D moonDetailMap; uniform float moonDetailReady;
         uniform sampler2D moonMediumMap; uniform float moonMediumReady;
+        uniform float moonColorSharpen;
         #ifndef OBJECTSPACE_NORMALMAP
         uniform mat3 normalMatrix;
         #endif
@@ -103,7 +157,7 @@ export function configureMoonSurfaceMaterial(material: THREE.Material, state: Su
         }`)
     }
   }
-  material.customProgramCacheKey = () => `${previousKey}/moon-normal-texture-v2/${clip ? 'clip' : 'open'}`
+  material.customProgramCacheKey = () => `${previousKey}/moon-normal-texture-v3/${clip ? 'clip' : 'open'}`
   configureTerrainShadowFade(material)
   return shade
 }

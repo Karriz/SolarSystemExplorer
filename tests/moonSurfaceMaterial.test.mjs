@@ -4,7 +4,7 @@ import * as THREE from 'three'
 import { readFileSync } from 'node:fs'
 import { inflateSync } from 'node:zlib'
 import { surfaceState } from '../src/surfaceMaterial.ts'
-import { configureMoonSurfaceMaterial, configureMoonTerrainDepth } from '../src/moonSurfaceMaterial.ts'
+import { configureMoonSurfaceMaterial, configureMoonTerrainDepth, moonColorSharpenWeight } from '../src/moonSurfaceMaterial.ts'
 
 const chunks = () => ({
   uniforms: {},
@@ -22,7 +22,13 @@ test('moon material samples shared normal and roughness detail without procedura
   assert.equal(shader.uniforms.moonCamera, shade.camera)
   assert.equal(shader.uniforms.moonMetersPerUnit.value, 1_737_400)
   const program = shader.vertexShader + shader.fragmentShader
-  assert.doesNotMatch(program, /dFdx|dFdy|149597870700/)
+  assert.doesNotMatch(program, /149597870700|dFdx\(bump\)|dFdy\(bump\)/)
+  assert.match(shader.fragmentShader, /dFdx\(vMapUv\)/)
+  assert.match(shader.fragmentShader, /textureSize\(map, 0\)/)
+  assert.match(shader.fragmentShader, /smoothstep\(1\.15, 2\.2, moonMagX\)/)
+  assert.match(shader.fragmentShader, /smoothstep\(10\.0, 24\.0, moonMagX\)/)
+  assert.equal(shader.uniforms.moonColorSharpen, state.colorSharpen)
+  assert.doesNotMatch(shader.fragmentShader, /#include <map_fragment>/)
   assert.doesNotMatch(program, /flat varying/)
   assert.match(shader.vertexShader, /varying float vMoonFade/)
   assert.match(shader.vertexShader, /moonMeters > 0\.0 && moonMeters < 1\.0e8/)
@@ -55,8 +61,38 @@ test('moon depth keeps skirt discard without a derivative normal', () => {
   assert.doesNotMatch(program, /dFdx|dFdy/)
   assert.match(shader.vertexShader, /vTerrainSkirt = terrainSkirt/)
   assert.match(shader.fragmentShader, /vTerrainSkirt > 0\.000001\) discard/)
-  assert.doesNotMatch(program,/texture2D|moonDetailMap|moonMediumMap|moonNoise/)
+  assert.doesNotMatch(program,/texture2D|moonDetailMap|moonMediumMap|moonNoise|textureSize|moonColorSharpen/)
   assert.equal(shader.uniforms.moonDetailMap,undefined)
+  assert.equal(shader.uniforms.moonColorSharpen,undefined)
+})
+
+test('terrain coverage still replaces missing color after the sharpen sample', () => {
+  const material = new THREE.MeshStandardMaterial()
+  material.onBeforeCompile = shader => {
+    shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb = mix(vec3(0.22), diffuseColor.rgb, step(0.999, vTerrainCoverage));')
+  }
+  const state = surfaceState()
+  configureMoonSurfaceMaterial(material, state, 1_737_400, true)
+  const shader = chunks()
+  material.onBeforeCompile(shader, {})
+  assert.match(shader.fragmentShader, /moonColor\.rgb = clamp/)
+  assert.match(shader.fragmentShader, /vTerrainCoverage/)
+  assert.doesNotMatch(shader.fragmentShader, /#include <map_fragment>/)
+  const sample = shader.fragmentShader.indexOf('moonColor.rgb = clamp')
+  const coverage = shader.fragmentShader.indexOf('vTerrainCoverage')
+  assert.ok(sample < coverage)
+  assert.equal(shader.uniforms.moonColorSharpen, state.colorSharpen)
+})
+
+test('moon color sharpen is active only while texels are mildly magnified', () => {
+  assert.equal(moonColorSharpenWeight(0.5), 0)
+  assert.equal(moonColorSharpenWeight(1.15), 0)
+  assert.ok(moonColorSharpenWeight(1.6) > 0 && moonColorSharpenWeight(1.6) < 1)
+  assert.equal(moonColorSharpenWeight(4), 1)
+  assert.equal(moonColorSharpenWeight(10), 1)
+  assert.ok(moonColorSharpenWeight(16) > 0 && moonColorSharpenWeight(16) < 1)
+  assert.equal(moonColorSharpenWeight(24), 0)
+  assert.equal(moonColorSharpenWeight(40), 0)
 })
 
 for(const file of ['moon-detail.png','moon-medium-detail.png'])test(`${file} contains valid unit normals and roughness data at fixed size`, () => {
