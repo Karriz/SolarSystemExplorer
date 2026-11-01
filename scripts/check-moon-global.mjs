@@ -40,7 +40,7 @@ try{
   const m=metrics.global.moon
   assert.equal(m.sampleSize,process.argv.includes('--baseline')?65:129)
   assert.equal(metrics.regional.moon.sources.length,0)
-  assert.ok(m.triangles<=m.triangleBudget);assert.ok(m.memoryBytes<=48*1048576)
+  assert.ok(m.triangles<=m.triangleBudget);assert.ok(m.memoryBytes<=128*1048576)
   assert.equal(m.failed,0);assert.ok(Math.abs(metrics.altitudeMeters-altitude)<2,`${name}: clearance ${metrics.altitudeMeters}`)
   await page.screenshot({path:resolve(output,name+'.png')})
   report.cases.push({name,lat,lon,altitude,metrics});console.log(name,m.maxLevel,m.visible,m.triangles,(m.memoryBytes/1048576).toFixed(1)+' MiB')
@@ -50,7 +50,7 @@ try{
   await page.setViewportSize({width:390,height:844})
   await page.evaluate(()=>terrainPilot.location('moon',26.13,3.63,1000))
   const metrics=await settle(page)
-  assert.ok(metrics.global.moon.memoryBytes<=48*1048576)
+  assert.ok(metrics.global.moon.memoryBytes<=128*1048576)
   await page.mouse.move(250,300);await page.mouse.down({button:'right'});await page.mouse.move(270,250,{steps:6});await page.mouse.up({button:'right'})
   const tilted=await settle(page);assert.ok(tilted.altitudeMeters>=99)
   await page.screenshot({path:resolve(output,'phone-tilt.png')});report.cases.push({name:'phone-tilt',metrics:tilted})

@@ -6,6 +6,7 @@ import * as THREE from 'three'
 import { decodeTerrain } from '../src/terrainDecode.ts'
 import { parseTerrainManifest, parseTerrainPage, terrainBounds, terrainGeometry } from '../src/terrain.ts'
 import { GlobeTerrainLayer } from '../src/GlobeTerrainLayer.ts'
+import { surfaceState } from '../src/surfaceMaterial.ts'
 
 const sha = buffer => createHash('sha256').update(buffer).digest('hex')
 const raw = Buffer.alloc(65 * 65 * 2)
@@ -208,7 +209,7 @@ test('terrain keeps the base until roots load, replaces parents without overlap,
   layer.update(camera, 900, performance.now() + 200, true)
   assert.equal(layer.active, true)
   assert.equal(body.material.visible, false)
-  assert.ok(layer.bytes <= 48 * 1024 * 1024)
+  assert.ok(layer.bytes <= 128 * 1024 * 1024)
   const visible = [...layer.nodes.values()].filter(n => n.mesh?.visible)
   assert.ok(visible.length > 0)
   for (const a of visible) for (const b of visible) if (a.address.z < b.address.z) {
@@ -337,18 +338,53 @@ test('the global Moon accepts denser 129 grids while retaining bounded metadata 
 test('dense global lunar terrain stays within the triangle and allocation limits and supplies ground sampling',async t=>{
   const m=manifest(1)
   Object.assign(m,{schema:2,sampleSize:129,noData:-32768,indexPages:{rootZoom:3,pages:{}},sourceResolutionMeters:118.4505876,verticalDatum:'Height above 1737400 m reference sphere'})
-  const {layer,camera}=setup(t,{decode:async()=>new Float32Array(129*129).fill(100),dispose(){}},undefined,{manifest:m})
+  const tileUrls=[]
+  const {layer,camera}=setup(t,{decode:async()=>new Float32Array(129*129).fill(100),dispose(){}},
+    async url => { tileUrls.push(String(url)); return new Response(compressed) },{manifest:m})
   await flush()
-  for(let i=0;i<4;i++){layer.update(camera,900,performance.now()+i*200,true);await flush()}
+  for(let i=0;i<8;i++){layer.update(camera,900,performance.now()+i*200,true);await flush()}
   const visible=[...layer.nodes.values()].filter(n=>n.mesh?.visible)
   assert.ok(visible.length>0)
   assert.ok([...layer.nodes.values()].some(node=>node.address.z===0 && node.mesh?.geometry.getAttribute('position').count===65*65+4*(65-1)))
-  assert.ok(visible.some(node=>node.address.z===1 && node.mesh.geometry.getAttribute('position').count===129*129+4*(129-1)))
+  for(const node of visible){
+    const dense=node.address.z>=m.maxZoom
+    const expected=(dense?129*129:65*65)+4*(dense?128:64)
+    assert.equal(node.mesh.geometry.getAttribute('position').count,expected,`tile ${node.address.z}/${node.address.x}/${node.address.y}`)
+  }
   assert.ok(visible.reduce((sum,n)=>sum+n.mesh.geometry.index.count/3,0)<=400000)
-  assert.ok(layer.bytes<=48*1024*1024)
+  assert.ok(layer.bytes<=128*1024*1024)
   const p=new THREE.Vector3(),n=new THREE.Vector3()
   assert.ok(layer.sampleSurface(0,-90,p,n))
   assert.ok(Math.abs(p.length()-1)<.001)
+  // Synthetic sub-resolution levels derive from measured parents without
+  // network tile requests.
+  assert.ok(visible.some(node=>node.address.z>m.maxZoom))
+  assert.ok(visible.every(node=>node.address.z<=m.maxZoom || node.mesh.geometry.getAttribute('position').count===129*129+4*(129-1)))
+  assert.ok(tileUrls.every(url=>Number(url.match(/tiles\/(\d+)\//)[1])<=m.maxZoom),'synthetic levels must not fetch tiles')
+})
+
+test('disabling procedural surface detail stops sub-resolution refinement without discarding measured terrain',async t=>{
+  const m=manifest(1)
+  Object.assign(m,{schema:2,sampleSize:129,noData:-32768,indexPages:{rootZoom:3,pages:{}},sourceResolutionMeters:118.4505876,verticalDatum:'Height above 1737400 m reference sphere'})
+  const surface=surfaceState()
+  surface.detail.value=0
+  const status=[]
+  t.mock.method(globalThis,'fetch',async url=>{
+    if(String(url).endsWith('catalog.json')) return Response.json({schema:1,bodies:{moon:'moon/test/manifest.json'}})
+    if(String(url).endsWith('manifest.json')) return Response.json(m)
+    return new Response(compressed)
+  })
+  const body=new THREE.Mesh(new THREE.SphereGeometry(1),new THREE.MeshStandardMaterial())
+  const layer=new GlobeTerrainLayer(body,value=>status.push(value),'http://localhost/terrain/',()=>({decode:async()=>new Float32Array(129*129).fill(100),dispose(){}}),'moon',surface)
+  t.after(()=>layer.dispose())
+  const camera=new THREE.PerspectiveCamera(48,1,.001,100)
+  camera.position.set(0,0,1.2);camera.lookAt(0,0,0)
+  await flush()
+  for(let i=0;i<8;i++){layer.update(camera,900,performance.now()+i*200,true);await flush()}
+  const visible=[...layer.nodes.values()].filter(n=>n.mesh?.visible)
+  assert.ok(visible.length>0)
+  assert.ok(visible.every(node=>node.address.z<=m.maxZoom))
+  assert.ok(visible.some(node=>node.address.z===m.maxZoom))
 })
 
 
