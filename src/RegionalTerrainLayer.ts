@@ -1,7 +1,8 @@
 import * as THREE from 'three'
+import { firstTerrainSurfaceHit, type TerrainSurfaceSampler } from './terrainSurface.ts'
 import { captureTerrainEdge, stitchTerrainEdges, type TerrainEdge } from './terrainEdges.ts'
 import { earthMeshSize, heightGrid, meshTriangles, terrainSurfaceBounds, REGIONAL_TRIANGLE_BUDGET } from './terrainLod.ts'
-import { EarthImagery, configureEarthColor } from './earthImagery.ts'
+import { EarthImagery, configureEarthColor, earthColorUvs, earthColorTransform } from './earthImagery.ts'
 import { bodyInfo } from './ephemeris.ts'
 import { terrainChildren, terrainGeometry } from './terrain.ts'
 import { tileBoundingSphere } from './GlobeTileLayer.ts'
@@ -10,7 +11,7 @@ import { geoDirection, tileKey, type RegionalSource, type TerrainPatch } from '.
 import type { TileAddress } from './surfaceTiles.ts'
 
 type Node = { address: TileAddress; source: RegionalSource; sphere: THREE.Sphere; box?: THREE.Box3; origin: THREE.Vector3; mesh?: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
-  heights?: Float32Array; gradients?: Float32Array; edge?: TerrainEdge; color?: { value: number }; request?: AbortController; meshBytes?: number; bytes: number; used: number; retry: number }
+  heights?: Float32Array; gradients?: Float32Array; edge?: TerrainEdge; color?: { value: number }; colorTransform?: { value: THREE.Vector4 }; request?: AbortController; meshBytes?: number; bytes: number; used: number; retry: number }
 export type RegionalMetrics = { ready: boolean; visible: number; cached: number; memoryBytes: number; transferBytes: number;
   requests: number; failed: number; decodeMs: number; buildMs: number; triangles: number; sources: string[]; grids: Record<string, number>; maxLevel: number; triangleBudget: number; residentMeshes: number; imagery?: ReturnType<EarthImagery['metrics']> }
 
@@ -38,6 +39,8 @@ export class RegionalTerrainLayer {
   private now = 0
   private selected = false
   private edgeSignature = ''
+  private fallbackSurface?: TerrainSurfaceSampler
+  private fallbackSignature = () => 'sphere'
   private refined = new Set<string>()
   private groundNode?: Node
   readonly budget = 48 * 1024 * 1024
@@ -62,6 +65,9 @@ export class RegionalTerrainLayer {
     if (source.body !== this.bodyId) throw new Error('Regional body mismatch')
     this.sources.push(source)
     this.lastUpdate = -Infinity
+  }
+  setFallbackSurface(sample: TerrainSurfaceSampler, signature: () => string) {
+    this.fallbackSurface = sample; this.fallbackSignature = signature; this.edgeSignature = ''
   }
   setEnabled(enabled: boolean) {
     this.enabled = enabled
@@ -110,6 +116,7 @@ export class RegionalTerrainLayer {
     const size = this.gridSize(node)
     const heights = heightGrid(node.heights!, node.source.sampleSize ?? 65, size)
     const geometry = terrainGeometry(bounds, heights, size, this.radiusMeters, this.radiusMeters, this.exaggeration, node.origin)
+    if (this.bodyId === 'earth') geometry.setAttribute('earthColorUv', earthColorUvs(bounds, size, node.address))
     if (this.bodyId !== 'earth' && node.gradients) {
       const normal = geometry.getAttribute('normal'), p = new THREE.Vector3(), east = new THREE.Vector3(), north = new THREE.Vector3()
       for (let r = 0; r < 65; r++) for (let c = 0; c < 65; c++) {
@@ -205,25 +212,41 @@ export class RegionalTerrainLayer {
       if (node.mesh) node.mesh.visible = false
       if (!this.wanted.has(this.key(node.source, node.address))) node.request?.abort()
     }
-    const show = (node: Node) => {
+    const show = (node: Node): { complete: boolean; nodes: Node[] } => {
+      if (score(node) === 0) return { complete: true, nodes: [] }
       const children = terrainChildren(node.address).map(a => this.nodes.get(this.key(node.source, a)))
-      if (children.every(child => child?.mesh && this.wanted.has(this.key(child.source, child.address)))) children.forEach(child => show(child!))
-      else if (node.mesh && score(node) > 0) { this.ensureGeometry(node); node.mesh.visible = !!node.edge }
+      const loaded = children.every(child => child?.mesh && this.wanted.has(this.key(child.source, child.address)))
+      const plans = loaded ? children.map(child => show(child!)) : []
+      const descendants = plans.flatMap(plan => plan.nodes)
+      if (loaded && plans.every(plan => plan.complete)) return { complete: true, nodes: descendants }
+      // Keep the parent until its entire visible replacement subtree is drawable,
+      // including descendants of ancestors whose own GPU geometry was evicted.
+      // Unprotect the partial subtree so a parent rebuild can reclaim its memory.
+      descendants.forEach(n => { if (n.mesh) n.mesh.visible = false })
+      if (node.mesh) {
+        this.ensureGeometry(node)
+        if (node.edge) { node.mesh.visible = true; return { complete: true, nodes: [node] } }
+      }
+      const available = descendants.filter(n => n.mesh && n.edge)
+      available.forEach(n => { n.mesh!.visible = true })
+      return { complete: false, nodes: available }
     }
     roots.forEach(show)
     const visible = [...this.nodes.values()].filter(n => n.mesh?.visible && n.edge)
-    const signature = visible.map(n => this.key(n.source, n.address)).sort().join('|')
+    const signature = this.fallbackSignature() + '/' + visible.map(n => this.key(n.source, n.address)).sort().join('|')
     if (signature !== this.edgeSignature) {
       const started = performance.now()
       stitchTerrainEdges(visible.map(n => ({ key: this.key(n.source, n.address), level: n.address.z,
-        bounds: n.source.bounds(n.address), origin: n.origin, geometry: n.mesh!.geometry, edge: n.edge! })))
+        bounds: n.source.bounds(n.address), origin: n.origin, geometry: n.mesh!.geometry, edge: n.edge! })), this.fallbackSurface)
       this.buildMs += performance.now() - started
       for (const node of visible) node.box = this.surfaceBox(node)
       this.edgeSignature = signature
     }
     this.state.clipCount.value = 0
-    for (const root of roots) if (root.mesh && this.state.clipCount.value < 4) {
-      const b = root.source.bounds(root.address)
+    // Clip only footprints actually drawn. Cached roots can have evicted GPU
+    // geometry, and a partial sibling replacement must leave fallback visible.
+    for (const node of visible) {
+      const b = node.source.bounds(node.address)
       this.state.clips.value[this.state.clipCount.value++].set(b.west, b.south, b.east, b.north)
     }
     this.group.visible = this.state.clipCount.value > 0
@@ -233,6 +256,7 @@ export class RegionalTerrainLayer {
       const color = node.mesh.visible ? this.imagery?.texture(node.address) : undefined
       const map = color ?? this.base.map
       if (node.color) node.color.value = color ? 1 : 0
+      if (color && node.colorTransform) earthColorTransform(node.address, color, node.colorTransform.value)
       if (node.mesh.material.map !== map) { node.mesh.material.map = map; node.mesh.material.needsUpdate = true }
     }
     this.pump()
@@ -300,7 +324,7 @@ export class RegionalTerrainLayer {
       const started = performance.now()
       const material = new THREE.MeshStandardMaterial({ map: this.base.map, roughness: 1, metalness: 0 })
       if (this.bodyId !== 'earth') configureSurfaceMaterial(material, this.state, this.radiusMeters, 1, false, node.origin)
-      else { node.color = { value: 0 }; configureEarthColor(material, node.color, this.fallbackColor) }
+      else { node.color = { value: 0 }; node.colorTransform = { value: new THREE.Vector4(1, 1, 0, 0) }; configureEarthColor(material, node.color, this.fallbackColor, node.colorTransform) }
       node.mesh = new THREE.Mesh(this.geometry(node), material)
       node.edge = captureTerrainEdge(node.mesh.geometry, this.gridSize(node))
       node.sphere.copy(node.mesh.geometry.boundingSphere!)
@@ -336,7 +360,7 @@ export class RegionalTerrainLayer {
     this.group.updateWorldMatrix(true, true)
     const picker = new THREE.Raycaster()
     picker.ray.copy(ray)
-    return picker.intersectObjects([...this.nodes.values()].flatMap(n => n.mesh?.visible ? [n.mesh] : []), false)[0]?.point ?? null
+    return firstTerrainSurfaceHit(picker, [...this.nodes.values()].flatMap(n => n.mesh?.visible ? [n.mesh] : []))?.point ?? null
   }
   cameraSurfaceRadius(position: THREE.Vector3) {
     if (!this.enabled || !this.selected) return
@@ -347,15 +371,16 @@ export class RegionalTerrainLayer {
     const candidates = [...this.nodes.values()].filter(n => {
       if (!n.mesh) return false
       const b = n.source.bounds(n.address)
-      return lon >= b.west && lon <= b.east && lat >= b.south && lat <= b.north
-    }).sort((a, b) => b.address.z - a.address.z)
+      return lon >= b.west - 1e-9 && lon <= b.east + 1e-9 && lat >= b.south - 1e-9 && lat <= b.north + 1e-9
+    // Prefer drawn, stitched geometry; retain cached off-screen ground for tilt.
+    }).sort((a, b) => Number(!!b.mesh?.visible) - Number(!!a.mesh?.visible) || b.address.z - a.address.z)
     if (!candidates.length) return
     this.groundNode = candidates[0]
     this.ensureGeometry(candidates[0])
     if (!candidates[0].edge) return
     this.group.updateWorldMatrix(true, true)
     const picker = new THREE.Raycaster(center.clone().addScaledVector(direction, this.radius * 2), direction.negate())
-    return picker.intersectObject(candidates[0].mesh!, false)[0]?.point.distanceTo(center)
+    return firstTerrainSurfaceHit(picker, [candidates[0].mesh!])?.point.distanceTo(center)
   }
   metrics(): RegionalMetrics {
     const visible = [...this.nodes.values()].filter(n => n.mesh?.visible && this.group.visible)

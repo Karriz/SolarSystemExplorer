@@ -276,3 +276,102 @@ test('hidden parent geometry is rebuilt from cached heights without redownloadin
   assert.equal(layer.metrics().transferBytes,wire)
   assert.ok([...counts.values()].every(n=>n===1))
 })
+
+test('fallback clipping follows visible leaves when parent GPU geometry is evicted',async t=>{
+  const {layer,state,camera}=setup(t)
+  for(let i=0;i<4;i++){layer.update(camera,900,performance.now()+i*200,true);await flush()}
+  const root=[...layer.nodes.values()].find(n=>n.address.z===6)
+  assert.ok(root.mesh && !root.mesh.visible)
+  // Reproduce pressure eviction while retaining parent metadata/heights.
+  root.mesh.geometry.dispose();root.mesh.geometry=new THREE.BufferGeometry();root.edge=undefined
+  const missing=[...layer.nodes.values()].find(n=>n.mesh?.visible)
+  missing.mesh.geometry.dispose();missing.mesh.geometry=new THREE.BufferGeometry();missing.edge=undefined
+  layer.ensureGeometry=()=>{} // simulate a deferred rebuild; this footprint needs fallback
+  layer.update(camera,900,performance.now()+1000,true)
+  const visible=[...layer.nodes.values()].filter(n=>n.mesh?.visible)
+  assert.equal(visible.length,3)
+  assert.equal(state.clipCount.value,visible.length)
+  for(const n of visible){
+    const b=n.source.bounds(n.address)
+    assert.ok(state.clips.value.slice(0,state.clipCount.value).some(c=>c.x===b.west&&c.y===b.south&&c.z===b.east&&c.w===b.north))
+  }
+})
+
+test('negative measured land elevations are retained rather than flattened as ocean',async t=>{
+  const {layer,camera}=setup(t,async()=>({heights:new Float32Array(65*65).fill(-75),transferBytes:100,decodeMs:0}),'earth')
+  layer.imagery.dispose();layer.imagery=undefined
+  for(let i=0;i<3;i++){layer.update(camera,900,performance.now()+i*200,true);await flush()}
+  const point=layer.hitGround(new THREE.Ray(camera.position.clone(),camera.position.clone().negate().normalize()))
+  assert.ok(point)
+  assert.ok(point.length()<1)
+  close((point.length()-1)*6371000,-75,2)
+})
+
+test('camera clearance uses the displayed parent while a finer sibling set is incomplete',async t=>{
+  const {layer,camera}=setup(t,async a=>{
+    if(a.z===7 && a.x===131 && a.y===45)throw Error('missing child')
+    return {heights:new Float32Array(65*65).fill(a.z===6?100:180),transferBytes:100,decodeMs:0}
+  })
+  for(let i=0;i<4;i++){layer.update(camera,900,performance.now()+i*200,true);await flush()}
+  assert.equal(layer.metrics().visible,1)
+  const b=terrainBounds({z:7,x:130,y:44})
+  camera.position.copy(geoDirection((b.north+b.south)/2,(b.west+b.east)/2)).multiplyScalar(1.02)
+  const displayed=layer.hitGround(new THREE.Ray(camera.position.clone(),camera.position.clone().negate().normalize()))
+  const clearanceRadius=layer.cameraSurfaceRadius(camera.position)
+  assert.ok(displayed);close(clearanceRadius,displayed.length(),1e-10)
+})
+
+test('an evicted child keeps its drawable parent until the complete replacement subtree is ready',async t=>{
+  const {layer,camera,state}=setup(t)
+  for(let i=0;i<4;i++){layer.update(camera,900,performance.now()+i*200,true);await flush()}
+  const root=[...layer.nodes.values()].find(n=>n.address.z===6),child=[...layer.nodes.values()].find(n=>n.mesh?.visible)
+  assert.ok(root.edge && child.edge)
+  child.mesh.geometry.dispose();child.mesh.geometry=new THREE.BufferGeometry();child.edge=undefined
+  layer.ensureGeometry=()=>{} // hold the missing child unavailable for one frame
+  layer.update(camera,900,performance.now()+1000,true)
+  assert.equal(layer.metrics().visible,1);assert.equal(root.mesh.visible,true);assert.equal(state.clipCount.value,1)
+})
+
+test('exposed regional borders match fallback geometry without moving measured interiors or internal joins',async()=>{
+  const {referenceSphereSurface}=await import('../src/terrainSurface.ts')
+  const bounds={west:0,east:2,north:2,south:0,span:2},rightBounds={...bounds,west:2,east:4}
+  const radius=1737400,size=65,make=(key,b)=>{
+    const origin=geoDirection((b.north+b.south)/2,(b.west+b.east)/2)
+    const geometry=terrainGeometry(b,new Float32Array(size*size).fill(200),size,radius,radius,1,origin)
+    return {key,level:6,bounds:b,origin,geometry,edge:captureTerrainEdge(geometry,size)}
+  }
+  const left=make('left',bounds),right=make('right',rightBounds)
+  const interior=Array.from(left.geometry.getAttribute('position').array.slice((32*65+32)*3,(32*65+32)*3+3))
+  stitchTerrainEdges([left,right],referenceSphereSurface)
+  const p=new THREE.Vector3()
+  for(const patch of [left,right])for(let r=1;r<64;r++){
+    const outer=r*65+(patch===left?0:64),inner=r*65+(patch===left?64:0)
+    p.fromBufferAttribute(patch.geometry.getAttribute('position'),outer).add(patch.origin)
+    close(p.length(),1,1e-8)
+    p.fromBufferAttribute(patch.geometry.getAttribute('position'),inner).add(patch.origin)
+    close((p.length()-1)*radius,200,.01)
+  }
+  // The common top/bottom corners also border fallback; leaving those at the
+  // measured height creates isolated corner spikes despite welded edge middles.
+  for (const patch of [left,right]) for (const i of [0,64,64*65,65*65-1]) {
+    p.fromBufferAttribute(patch.geometry.getAttribute('position'),i).add(patch.origin)
+    close(p.length(),1,1e-8)
+  }
+  assert.deepEqual(Array.from(left.geometry.getAttribute('position').array.slice((32*65+32)*3,(32*65+32)*3+3)),interior)
+  for(const patch of [left,right])patch.geometry.dispose()
+})
+
+test('fallback refinement refreshes regional borders even when the regional tile selection is unchanged',async t=>{
+  const {referenceSphereSurface}=await import('../src/terrainSurface.ts')
+  const {layer,camera}=setup(t)
+  let height=10,version=0
+  layer.setFallbackSurface((lat,lon,p,n)=>{referenceSphereSurface(lat,lon,p,n);p.multiplyScalar(1+height/1737400);return true},()=>String(version))
+  for(let i=0;i<4;i++){layer.update(camera,900,performance.now()+i*200,true);await flush()}
+  const node=[...layer.nodes.values()].find(n=>n.mesh?.visible&&n.address.x===130&&n.address.y===44)
+  const point=new THREE.Vector3(),index=32*65
+  const radius=()=>point.fromBufferAttribute(node.mesh.geometry.getAttribute('position'),index).add(node.origin).length()
+  close((radius()-1)*1737400,10,.01)
+  height=50;version++
+  layer.update(camera,900,performance.now()+1200,true)
+  close((radius()-1)*1737400,50,.01)
+})

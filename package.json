@@ -4,7 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "terrain:check-moon-stability": "node scripts/check-moon-lod-stability.mjs",
+    "terrain:check-moon": "node scripts/check-moon-global.mjs",
+    "terrain:fetch-moon": "python3 scripts/fetch-moon-global.py",
+    "terrain:fetch-wac": "python3 scripts/fetch-wac-global.py",
+    "terrain:build-wac": "sh scripts/terrain-python.sh scripts/build-wac-global.py",
+    "terrain:test-pipeline": "sh scripts/terrain-python.sh scripts/test-moon-build.py",
     "terrain:build": "sh scripts/terrain-python.sh scripts/build-terrain.py",
+    "terrain:check-color-uv": "node --experimental-strip-types scripts/check-earth-color-uv.mjs",
+    "terrain:check-continuity": "node scripts/check-terrain-continuity.mjs",
+    "terrain:check-heights": "node --experimental-strip-types scripts/check-earth-heights.mjs",
     "terrain:benchmark": "node scripts/benchmark-terrain-pilot.mjs",
     "terrain:pilot": "sh scripts/terrain-python.sh scripts/build-terrain-pilot.py",
     "terrain:validate": "sh scripts/terrain-python.sh scripts/validate-terrain.py",
@@ -13,7 +22,8 @@
     "build": "tsc -b && vite build",
     "build:app": "tsc -b && vite build --mode app",
     "preview": "vite preview",
-    "terrain:check-decoder": "node scripts/check-terrain-decoder.mjs"
+    "terrain:check-decoder": "node scripts/check-terrain-decoder.mjs",
+    "terrain:check-wac": "node scripts/check-wac-global.mjs"
   },
   "dependencies": {
     "@jsquash/webp": "^1.5.0",

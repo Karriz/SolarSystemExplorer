@@ -9,6 +9,7 @@ export const pilotLocations: PilotLocation[] = [
   { id: 'alps', body: 'earth', name: 'Bernese Alps', lat: 46.57, lon: 8.02, altitude: 18000 },
   { id: 'namibia', body: 'earth', name: 'Brandberg, Namibia', lat: -21.12, lon: 14.58, altitude: 24000 },
   { id: 'hadley', body: 'moon', name: 'Hadley–Apennine', lat: 26.13, lon: 3.63, altitude: 30000 },
+  { id: 'tycho', body: 'moon', name: 'Tycho', lat: -43.31, lon: -11.36, altitude: 30000 },
 ]
 
 export function mercatorAddress(lon: number, lat: number, z: number): TileAddress {

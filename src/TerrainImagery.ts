@@ -61,7 +61,7 @@ export class TerrainImagery {
       if (this.requests >= 3) break
       const entry = this.entries.get(key)!
       if (entry.texture || entry.request || entry.retryAt > now) continue
-      const reserve = this.source.tileSize ** 2 * 4 * 4 / 3
+      const reserve = Math.ceil(this.source.tileSize ** 2 * 4 * (1 + 4 / 3))
       const unused = [...this.entries.values()].filter(e => e.texture && !this.wanted.has(this.key(e.address)) && now - e.lastUsed > 500)
         .sort((a, b) => a.lastUsed - b.lastUsed)
       while (this.bytes + reserve > MAX_BYTES && unused.length) this.release(unused.shift()!)
@@ -114,6 +114,11 @@ export class TerrainImagery {
     entry.bitmap = undefined
     this.bytes -= entry.bytes
     entry.bytes = 0
+  }
+
+  metrics() {
+    return { memoryBytes: this.bytes, requests: this.requests, cached: [...this.entries.values()].filter(e => e.texture).length,
+      failed: [...this.entries.values()].filter(e => e.retryAt > 0).length, budget: MAX_BYTES }
   }
 
   clear() {

@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { mercatorBounds, tileKey } from './terrainPilot.ts'
-import type { TileAddress } from './surfaceTiles.ts'
+import type { TileAddress, TileBounds } from './surfaceTiles.ts'
 
 export const earthColorSource = {
   label: 'Sentinel-2 · WorldCover 2021 RGB', credit: '© ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium',
@@ -16,6 +16,39 @@ export function earthColorUrl(a: TileAddress) {
   return `https://wmts.terrascope.be/?${query}`
 }
 type Entry = { address: TileAddress; texture?: THREE.Texture; bitmap?: ImageBitmap; request?: AbortController; retry: number; error?: string; used: number; bytes: number }
+
+/** Project in double precision before upload. GPU tan/log approximations at
+ * globe scale can shift a fine tile by a sizeable fraction of its height. */
+export function earthColorUvs(bounds: TileBounds, size: number, address: TileAddress) {
+  const values: number[] = [], n = 2 ** address.z
+  for (let r = 0; r < size; r++) {
+    const lat = bounds.north + (bounds.south - bounds.north) * r / (size - 1)
+    const phi = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(lat, -85.0511287798066, 85.0511287798066))
+    const v = (.5 + Math.asinh(Math.tan(phi)) / (2 * Math.PI)) * n - (n - address.y - 1)
+    for (let c = 0; c < size; c++) {
+      const lon = bounds.west + (bounds.east - bounds.west) * c / (size - 1)
+      values.push((lon + 180) / 360 * n - address.x, v)
+    }
+  }
+  // Same perimeter order as terrainGeometry; skirt bottoms retain their tops' UVs.
+  const edge = [
+    ...Array.from({ length: size }, (_, c) => c),
+    ...Array.from({ length: size - 1 }, (_, r) => (r + 1) * size + size - 1),
+    ...Array.from({ length: size - 1 }, (_, c) => size * size - 2 - c),
+    ...Array.from({ length: size - 2 }, (_, r) => (size - 2 - r) * size),
+  ]
+  for (const i of edge) values.push(values[i * 2], values[i * 2 + 1])
+  return new THREE.Float32BufferAttribute(values, 2)
+}
+
+/** Convert mesh-local UVs to the currently available image, including parents.
+ * Evaluate the global offset subtraction on the CPU, keeping GPU values small. */
+export function earthColorTransform(address: TileAddress, texture: THREE.Texture, target = new THREE.Vector4()) {
+  const n = 2 ** address.z
+  return target.set(texture.repeat.x / n, texture.repeat.y / n,
+    address.x / n * texture.repeat.x + texture.offset.x,
+    (n - address.y - 1) / n * texture.repeat.y + texture.offset.y)
+}
 
 /** Provider-rendered RGB tiles, mapped directly onto terrain meshes. No imagery
  * shell, raster preprocessing, private key, or application tile server. */
@@ -119,17 +152,15 @@ export class EarthImagery {
 
 /** Geometry keeps geographic UVs for the bundled fallback. Only the map lookup
  * changes to Web Mercator when a hosted texture exists; normals/positions stay measured. */
-export function configureEarthColor(material: THREE.MeshStandardMaterial, active: { value: number }, fallback: { value: THREE.Texture | null }) {
+export function configureEarthColor(material: THREE.MeshStandardMaterial, active: { value: number }, fallback: { value: THREE.Texture | null }, transform: { value: THREE.Vector4 }) {
   material.onBeforeCompile = shader => {
-    shader.uniforms.earthColorActive = active; shader.uniforms.earthBaseColor = fallback
-    shader.vertexShader = 'uniform float earthColorActive; varying vec2 vEarthGeoUv;\n' + shader.vertexShader
+    shader.uniforms.earthColorTransform = transform; shader.uniforms.earthColorActive = active; shader.uniforms.earthBaseColor = fallback
+    shader.vertexShader = 'attribute vec2 earthColorUv; uniform vec4 earthColorTransform; uniform float earthColorActive; varying vec2 vEarthGeoUv;\n' + shader.vertexShader
     shader.vertexShader = shader.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
       vEarthGeoUv=uv;
       #ifdef USE_MAP
       if(earthColorActive>0.5) {
-        float latitude=clamp((uv.y-0.5)*3.14159265359,-1.48442223,1.48442223);
-        float northing=0.5+log(tan(0.785398163397+latitude*0.5))/6.28318530718;
-        vMapUv=(mapTransform*vec3(uv.x,northing,1.0)).xy;
+        vMapUv=earthColorUv*earthColorTransform.xy+earthColorTransform.zw;
       }
       #endif`)
     shader.fragmentShader = 'uniform float earthColorActive; uniform sampler2D earthBaseColor; varying vec2 vEarthGeoUv;\n' + shader.fragmentShader
@@ -140,5 +171,5 @@ export function configureEarthColor(material: THREE.MeshStandardMaterial, active
       diffuseColor*=earthSample;
       #endif`)
   }
-  material.customProgramCacheKey = () => 'earth-rgb-mercator-v1'
+  material.customProgramCacheKey = () => 'earth-rgb-local-mercator-v2'
 }

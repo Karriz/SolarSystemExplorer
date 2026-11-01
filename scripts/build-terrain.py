@@ -27,7 +27,9 @@ NODATA = -32768
 
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, separators=(",", ":")) + "\n")
+    temporary = path.with_suffix(path.suffix + ".writing")
+    temporary.write_text(json.dumps(value, separators=(",", ":")) + "\n")
+    temporary.replace(path)
 
 
 def file_hash(path):
@@ -38,18 +40,29 @@ def file_hash(path):
 class Raster:
     def __init__(self, source, cache, offline):
         self.source = source
-        path = cache / source["file"]
-        if not path.exists():
-            if offline:
-                raise ValueError(f"Missing cached source: {path}")
-            print(f"Downloading {source['url']}", flush=True)
-            temporary = path.with_suffix(path.suffix + ".download")
-            with urllib.request.urlopen(source["url"], timeout=120) as response, temporary.open("wb") as target:
-                shutil.copyfileobj(response, target)
-            temporary.replace(path)
-        if file_hash(path) != source["sha256"]:
-            raise ValueError(f"Source checksum changed: {path}; review the upstream product")
         width, height = source["width"], source["height"]
+        parts = source.get("files")
+        if parts:
+            for part in parts:
+                path = cache / part["file"]
+                if not path.exists() or path.stat().st_size != part["bytes"] or file_hash(path) != part["sha256"]:
+                    raise ValueError(f"Missing or changed tiled source: {path}; run fetch-moon-global.py")
+            fingerprint = hashlib.sha256(json.dumps(parts, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            if fingerprint != source["sha256"]:
+                raise ValueError("Tiled-source fingerprint mismatch")
+            path = cache / parts[0]["file"]
+        else:
+            path = cache / source["file"]
+            if not path.exists():
+                if offline:
+                    raise ValueError(f"Missing cached source: {path}")
+                print(f"Downloading {source['url']}", flush=True)
+                temporary = path.with_suffix(path.suffix + ".download")
+                with urllib.request.urlopen(source["url"], timeout=120) as response, temporary.open("wb") as target:
+                    shutil.copyfileobj(response, target)
+                temporary.replace(path)
+            if file_hash(path) != source["sha256"]:
+                raise ValueError(f"Source checksum changed: {path}; review the upstream product")
         normalized = cache / f"{source['product']}-{source['sha256'][:12]}-normalized-v1.npy"
         stats_path = normalized.with_suffix(".json")
         if not normalized.exists() or not stats_path.exists():
@@ -58,9 +71,12 @@ class Raster:
             minimum, maximum, missing = math.inf, -math.inf, 0
             dataset = None
             if path.suffix == ".IMG":
-                if path.stat().st_size != width * height * 2:
-                    raise ValueError("Incomplete lunar raster")
-                raw = np.memmap(path, mode="r", dtype="<i2", shape=(height, width))
+                if parts:
+                    quadrants = [np.memmap(cache / p["file"], mode="r", dtype="<i2", shape=(height // 2, width // 2)) for p in parts]
+                else:
+                    if path.stat().st_size != width * height * 2:
+                        raise ValueError("Incomplete lunar raster")
+                    raw = np.memmap(path, mode="r", dtype="<i2", shape=(height, width))
             else:
                 dataset = rasterio.open(path)
                 projection = dataset.crs.to_dict()
@@ -77,7 +93,16 @@ class Raster:
             try:
                 for row in range(0, height, 128):
                     count = min(128, height - row)
-                    block = dataset.read(1, window=Window(0, row, width, count)) if dataset else raw[row:row + count]
+                    if parts:
+                        # Rows are processed in aligned 128-row blocks; each
+                        # approved 90-degree quadrant has 23,040 rows.
+                        half = height // 2
+                        if row % half + count > half:
+                            raise ValueError("Normalization block crosses source quadrant")
+                        pair = 0 if row < half else 2
+                        block = np.concatenate([q[row % half:row % half + count] for q in quadrants[pair:pair+2]], axis=1)
+                    else:
+                        block = dataset.read(1, window=Window(0, row, width, count)) if dataset else raw[row:row + count]
                     block = block.astype("float32")
                     invalid = block == (dataset.nodata if dataset else NODATA)
                     block *= source["sourceScale"]
@@ -121,9 +146,14 @@ class Raster:
 
 
 def build(body, source, args):
-    raster = Raster(source, args.cache, args.offline)
+    source_cache = args.cache
+    if source.get("cacheSubdirectory") and source.get("files") and not (source_cache / source["files"][0]["file"]).exists():
+        source_cache = source_cache / source["cacheSubdirectory"]
+    raster = Raster(source, source_cache, args.offline)
+    size = source.get("sampleSize", SIZE)
+    cells = size - 1
     max_zoom = args.max_zoom if args.max_zoom is not None else source["maxZoom"]
-    version = f"{source['product']}-{source['sha256'][:12]}-g{SIZE}-z{max_zoom}-v3"
+    version = f"{source['product']}-{source['sha256'][:12]}-g{size}-z{max_zoom}-v3"
     if source.get("adapterRevision", 1) != 1:
         version += f"-r{source['adapterRevision']}"
     release = args.output / body / version
@@ -136,20 +166,35 @@ def build(body, source, args):
         return f"{body}/{version}/manifest.json"
     # Keep incomplete releases outside the web root and Vite's file watcher.
     staging = args.cache / "build" / f"{body}-{version}"
-    if staging.exists():
-        shutil.rmtree(staging)
-    staging.mkdir(parents=True)
+    staging.mkdir(parents=True, exist_ok=True)
+    checkpoints = args.cache / "checkpoints" / version
     index, pages, total_bytes = {}, {}, 0
     units = source["scaleMeters"]
     for z in range(max_zoom + 1):
         span = 180 / 2 ** z
-        chord = source["referenceRadiusMeters"] * (1 - math.cos(math.radians(span / CELLS) / math.sqrt(2)))
+        chord = source["referenceRadiusMeters"] * (1 - math.cos(math.radians(span / cells) / math.sqrt(2)))
         for x in range(2 ** (z + 1)):
             directory = staging / "tiles" / str(z) / str(x)
-            directory.mkdir(parents=True)
-            lons = -180 + x * span + np.arange(SIZE)[None, :] / CELLS * span
+            directory.mkdir(parents=True, exist_ok=True)
+            lons = -180 + x * span + np.arange(size)[None, :] / cells * span
+            checkpoint = checkpoints / str(z) / f"{x}.json"
+            previous = json.loads(checkpoint.read_text()) if checkpoint.exists() else {}
+            reusable = len(previous) == 2 ** z and all(
+                (directory / f"{y}.bin").is_file() and (directory / f"{y}.bin").stat().st_size == info["bytes"]
+                and file_hash(directory / f"{y}.bin") == info["sha256"] for y, info in previous.items())
+            column = {}
             for y in range(2 ** z):
-                lats = 90 - y * span - np.arange(SIZE)[:, None] / CELLS * span
+                key = f"{z}/{x}/{y}"
+                if reusable:
+                    info = previous[str(y)]
+                    total_bytes += info["bytes"]
+                    if z <= PAGE_ZOOM:
+                        index[key] = info
+                    else:
+                        page = f"{x // 2 ** (z - PAGE_ZOOM)}/{y // 2 ** (z - PAGE_ZOOM)}"
+                        pages.setdefault(page, {})[key] = info
+                    continue
+                lats = 90 - y * span - np.arange(size)[:, None] / cells * span
                 heights = raster.sample(lons, lats)
                 valid = np.isfinite(heights)
                 quantized = np.rint(np.where(valid, heights, 0) / units)
@@ -167,19 +212,21 @@ def build(body, source, args):
                 total_bytes += len(payload)
                 info = {"min": float(decoded.min()), "max": float(decoded.max()), "error": round(error, 2),
                         "bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest()}
-                key = f"{z}/{x}/{y}"
+                column[str(y)] = info
                 if z <= PAGE_ZOOM:
                     index[key] = info
                 else:
                     page = f"{x // 2 ** (z - PAGE_ZOOM)}/{y // 2 ** (z - PAGE_ZOOM)}"
                     pages.setdefault(page, {})[key] = info
+            if not reusable:
+                write_json(checkpoint, column)
         print(f"{body}: built level {z}, {total_bytes / 1e6:.1f} MB", flush=True)
     page_info = {}
     for key, tiles in pages.items():
         path = staging / "indices" / f"{key}.json"
         write_json(path, tiles)
         page_info[key] = {"url": f"indices/{key}.json", "bytes": path.stat().st_size, "sha256": file_hash(path)}
-    manifest = {"schema": 2, "body": body, "version": version, "grid": "geographic-2x1", "sampleSize": SIZE,
+    manifest = {"schema": 2, "body": body, "version": version, "grid": "geographic-2x1", "sampleSize": size,
         "maxZoom": max_zoom, "encoding": "gzip-int16-le", "scaleMeters": units, "offsetMeters": 0, "noData": NODATA,
         "longitude": "east-positive-minus180-to180", "rowOrder": "north-to-south",
         "minHeightMeters": min(0, raster.stats["min"] - units), "maxHeightMeters": max(0, raster.stats["max"] + units),
@@ -188,6 +235,8 @@ def build(body, source, args):
         "sourceSha256": source["sha256"], "tileUrl": "tiles/{z}/{x}/{y}.bin", "tiles": index,
         "indexPages": {"rootZoom": PAGE_ZOOM, "pages": page_info}, "tileBytes": total_bytes,
         **{key: source[key] for key in ("frame", "verticalDatum", "referenceRadiusMeters", "sourceResolutionMeters", "credit", "sourceUrl")}}
+    if source.get("files"):
+        manifest["sourceFiles"] = source["files"]
     if source.get("referenceSurfaceApproximation"):
         manifest["referenceSurfaceApproximation"] = True
     write_json(staging / "manifest.json", manifest)

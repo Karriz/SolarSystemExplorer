@@ -8,7 +8,7 @@ import { createCameraOrbit, type BodyCameraControls } from './cameraOrbit'
 import { GlobeTerrainLayer, type TerrainStatus } from './GlobeTerrainLayer'
 import { terrainBodies, type TerrainBody } from './terrain'
 import { RegionalTerrainLayer, type RegionalMetrics } from './RegionalTerrainLayer'
-import { earthPilotSources, lunarPilotSource } from './RegionalTerrainSource'
+import { earthPilotSources } from './RegionalTerrainSource'
 import { configureSurfaceMaterial, surfaceState } from './surfaceMaterial'
 import { geoDirection, pilotLocations } from './terrainPilot'
 
@@ -116,10 +116,8 @@ export class ExplorerScene {
   private regional = new Map<'earth' | 'moon', RegionalTerrainLayer>()
   private pilotMetricsKey = ''
   private onPilotStatus?: (body: 'earth' | 'moon', metrics: RegionalMetrics) => void
-  private pilotError = ''
   private pilotAltitude: { direction: THREE.Vector3; altitude: number; until: number } | null = null
   private lastAltitudeMeters = 0
-  private pilotMetadata = new AbortController()
   private hitGround = (ray: THREE.Ray) => this.regional.get(this.selected as 'earth' | 'moon')?.hitGround(ray)
     ?? this.terrain.get(this.selected as TerrainBody)?.hitGround(ray) ?? null
   private onControlStart = () => { this.focusDistance = null; this.focusDirection = null; this.pilotAltitude = null }
@@ -163,8 +161,6 @@ export class ExplorerScene {
       new URL(import.meta.env.VITE_TERRAIN_BASE_URL || `${import.meta.env.BASE_URL}terrain/`, window.location.href).href, undefined, id, id === 'moon' ? this.surfaces.moon : undefined))
     for (const id of ['earth', 'moon'] as const) this.regional.set(id, new RegionalTerrainLayer(this.bodies.get(id)!, id, this.surfaces[id]))
     earthPilotSources().forEach(source => this.regional.get('earth')!.addSource(source))
-    void lunarPilotSource(new URL(`${import.meta.env.BASE_URL}terrain/pilot/`, window.location.href).href, this.pilotMetadata.signal)
-      .then(source => this.regional.get('moon')!.addSource(source)).catch(error => { if (!this.disposed) this.pilotError = String(error) })
     this.updateBodyOrientations()
     this.createOrbits()
     this.resizeObserver = new ResizeObserver(() => this.resize())
@@ -330,6 +326,7 @@ export class ExplorerScene {
   setTerrainExaggeration(value: number) { this.terrain.forEach(layer => layer.setExaggeration(value)); this.regional.forEach(layer => layer.setExaggeration(value)) }
   private terrainShadows = true
   setTerrainShadows(enabled: boolean) { this.terrainShadows = enabled }
+  async setMoonWacPilot(enabled: boolean) { await this.terrain.get('moon')?.setWacPilot(enabled) }
   setSurfaceDetail(enabled: boolean) { this.surfaces.moon.detail.value = enabled ? 1 : 0 }
   pilot(id: string, altitude?: number) {
     const location = pilotLocations.find(p => p.id === id)
@@ -354,7 +351,7 @@ export class ExplorerScene {
     return Array.from(pixels)
   }
   pilotMetrics() {
-    return { selected: this.selected, elevationDecoder: 'libwebp-wasm', sunElevationDegrees: THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(this.camera.position.clone().normalize().dot(this.sunLight.position.clone().sub(this.bodies.get(this.selected)!.position).normalize()), -1, 1))), altitudeMeters: this.lastAltitudeMeters, classificationReady: this.surfaces.earth.hasClassification.value > 0, lunarSourceError: this.pilotError, regional: Object.fromEntries([...this.regional].map(([id, layer]) => [id, layer.metrics()])),
+    return { selected: this.selected, elevationDecoder: 'libwebp-wasm', sunElevationDegrees: THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(this.camera.position.clone().normalize().dot(this.sunLight.position.clone().sub(this.bodies.get(this.selected)!.position).normalize()), -1, 1))), altitudeMeters: this.lastAltitudeMeters, classificationReady: this.surfaces.earth.hasClassification.value > 0, lunarSourceError: '', global: Object.fromEntries([...this.terrain].map(([id, layer]) => [id, layer.metrics()])), regional: Object.fromEntries([...this.regional].map(([id, layer]) => [id, layer.metrics()])),
       renderer: { calls: this.renderer.info.render.calls, triangles: this.renderer.info.render.triangles, textures: this.renderer.info.memory.textures, geometries: this.renderer.info.memory.geometries } }
   }
 
@@ -475,7 +472,8 @@ export class ExplorerScene {
     }
     this.stars.position.copy(this.camera.position)
     this.surfaceTiles.update(this.camera, viewportHeight, now, this.selected === 'moon' ? 'moon' : this.selected === 'earth' && this.surfaces.earth.clipCount.value > 0 ? 'earth' : terrainBody)
-    const closeTerrain = !!this.regional.get(this.selected as 'earth' | 'moon')?.metrics().ready
+    const closeTerrain = this.selected === 'moon' ? !!this.terrain.get('moon')?.active
+      : !!this.regional.get(this.selected as 'earth' | 'moon')?.metrics().ready
     const shadowWeight = closeTerrain && this.terrainShadows ? 1 - THREE.MathUtils.smoothstep(this.lastAltitudeMeters, 30000, 50000) : 0
     this.terrainSun.castShadow = shadowWeight > 0
     this.terrainSun.intensity = 3 * shadowWeight
@@ -530,7 +528,6 @@ export class ExplorerScene {
     cancelAnimationFrame(this.frame)
     this.resizeObserver.disconnect()
     this.controls.dispose()
-    this.pilotMetadata.abort()
     this.regional.forEach(layer => layer.dispose())
     Object.values(this.surfaces).forEach(s => s.classification.value?.dispose())
     this.surfaceTiles.dispose()

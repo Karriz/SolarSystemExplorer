@@ -6,19 +6,19 @@ import { resolve, sep } from 'node:path'
 
 export default defineConfig(({ mode }) => ({
   plugins: [react(), {
-    name: 'bounded-terrain-pilot',
+    name: 'static-terrain-releases',
     configureServer(server) {
-      // Generated terrain is intentionally excluded from the watcher. Serve the
-      // small pilot directly so preparing it after startup does not require a
-      // million-file public-directory rescan or a dev-server restart.
-      const root = resolve('public/terrain/pilot')
-      server.middlewares.use('/terrain/pilot', async (req, res, next) => {
+      // Generated terrain is excluded from the watcher. Serve completed files
+      // directly so new immutable releases are available after publication,
+      // without rescanning the public tree or restarting the dev server.
+      const root = resolve('public/terrain')
+      server.middlewares.use('/terrain', async (req, res, next) => {
         try {
           const path = resolve(root, `.${decodeURIComponent(new URL(req.url ?? '/', 'http://localhost').pathname)}`)
           if (!path.startsWith(root + sep) || !['GET', 'HEAD'].includes(req.method ?? '')) return next()
           const info = await stat(path)
           if (!info.isFile()) return next()
-          res.setHeader('Content-Type', path.endsWith('.json') ? 'application/json' : 'application/octet-stream')
+          res.setHeader('Content-Type', path.endsWith('.json') ? 'application/json' : path.endsWith('.png') ? 'image/png' : path.endsWith('.webp') ? 'image/webp' : 'application/octet-stream')
           res.setHeader('Content-Length', info.size)
           if (req.method === 'HEAD') res.end(); else createReadStream(path).pipe(res)
         } catch { next() }

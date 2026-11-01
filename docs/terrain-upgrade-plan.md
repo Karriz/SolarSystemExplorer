@@ -1,9 +1,17 @@
 # Terrain and surface-detail upgrade plan
 
-Updated: 2026-10-30  
+Updated: 2026-11-01
 Status: Earth LOD, hosted color, focused shadows, and view-centered coverage implemented; full quality/hardware acceptance remains open. See [pilot results](terrain-pilot-results.md) for source downloads, derived sizes, validation, and remaining quality/performance gates.
 
 ## Implementation status
+
+The Moon now uses one whole-globe LOLA LDEM_256 release (approximately 118 m source spacing), replacing the old approximately 474 m baseline. The app no longer loads the Hadley SLDEM overlay. The current CGI Moon Kit texture remains in use by user choice: the exact global corrected Kaguya reflectance product was not available from the checked official download services, and the regional alternative is not substituted. See [global Moon results](terrain-pilot-results.md#global-moon-elevation--2026-11-01).
+
+The earlier Hadley overlay implementation matches exposed edges to the rendered global fallback, including when fine tiles fail or fallback LOD changes. Drawable parent replacement and physical-surface picking also cover GPU eviction and skirt walls. The October 31 source-edge follow-up passes 81 tests plus build and targeted low-altitude lunar/Earth browser checks. This is perimeter continuity, not a full source/datum blend; see [results and remaining limits](terrain-pilot-results.md#source-edge-continuity-and-physical-ground-picking--2026-10-31).
+
+The horizontal imagery bands found during boundary review are fixed: Earth now uploads CPU-projected tile-local image UVs instead of evaluating globe-scale projection in the vertex shader. An identical-view comparison and 30 actual-GPU shader cases verify the correction; see [band diagnosis and validation](terrain-pilot-results.md#confirmed-imagery-band-cause-and-correction--2026-10-31).
+
+Earth color is accepted for the current scope after user review. The October 31 follow-up makes fallback clipping match drawn terrain and camera clearance prefer displayed geometry during incomplete refinement. Coastal/negative-land numeric samples are recorded; no guessed datum correction or global water clamp is applied. Source-footprint blending and real-device performance remain open. See [continuity findings](terrain-pilot-results.md#continuity-and-height-reference-follow-up--2026-10-31).
 
 The shifting spikes have now been reproduced in Brave on localhost and traced to privacy-induced canvas pixel changes, not ordinary source uncertainty. Earth elevation now uses direct libwebp WASM decoding; numeric heights bypass canvas readback. Independent pixel checksums and a Brave before/after comparison verify the correction. See [confirmed cause and validation](terrain-pilot-results.md#confirmed-spike-cause-privacy-protected-canvas-readback).
 
@@ -12,7 +20,7 @@ Earth now streams native Mapterhorn tiles around the view beyond the three locat
 
 Hosted Sentinel-2 / WorldCover 2021 RGB is mapped directly onto the measured meshes using Web Mercator UVs. It uses independent zoom-14/32 MiB/three-request limits and bundled color fallback. The provider's live KVP WMTS endpoint and browser CORS were checked; no preprocessing or local color archive is required. Acquisition lighting remains in the satellite color. Focused Earth/Moon shadows are restored, exclude skirts, have an on/off control, and fade at 30–50 km altitude. Earth's procedural grain, classification, raster slope override, and overlapping imagery shell remain disabled.
 
-The Hadley SLDEM2015 overlay remains 341 tiles at approximately 118 m sampling. No other planetary archives were regenerated. Source-boundary blending, full geographic/datum validation, combined memory measurement, and real desktop/mobile GPU performance remain open. The bounded lunar manifest does not replace hierarchical metadata for future large overlays. See [current results](terrain-pilot-results.md#earth-lod-color-and-coverage-follow-up) for browser evidence and limitations.
+The optional Hadley SLDEM2015 preparation experiment remains 341 tiles at approximately 118 m sampling; it is no longer loaded by default. Mars, Mercury, and Venus archives were not regenerated. Source-boundary blending, full geographic/datum validation, combined memory measurement, and real desktop/mobile GPU performance remain open. The bounded lunar manifest does not replace hierarchical metadata for future large overlays. See [current results](terrain-pilot-results.md#earth-lod-color-and-coverage-follow-up) for browser evidence and limitations.
 
 ## Objective
 
@@ -66,7 +74,7 @@ The planned 120 m and 60 m lunar tiers are candidate source/sampling scales with
 | Body | Retained baseline | Recommended upgrade | Limit on initial scope |
 | --- | --- | --- | --- |
 | Earth | Small coarse globe fallback; no Earth terrain adapter existed at review time | Stream Mapterhorn elevation, using approximately 30 m global source coverage and finer regional sources where available | Test three representative areas before broad rollout; no bundled global high-resolution archive |
-| Moon | Existing approximately 474 m LOLA source | Trial approximately 120 m sampling of SLDEM2015 in representative regions; retain approximately 60 m source detail only where the visual comparison warrants it | No full-belt or full-globe fine rebuild in the first milestone; retain LOLA outside 60°S–60°N; meter-scale sites are optional later work |
+| Moon | Global approximately 118 m LOLA LDEM_256, implemented November 1 | One source for all latitudes; finest rendering mesh approximately 166 m north–south | Current CGI Moon Kit texture retained; global corrected Kaguya reflectance remains deferred; meter-scale sites are optional later work |
 | Mars | Existing approximately 463 m MOLA source | Add a small number of contiguous HRSC regional overlays, with a processed sampling scale chosen from medium-view comparisons up to the approximately 50 m source detail | Do not download/process the full 200 m blend by default; evaluate a regional extract if it is simpler than the direct HRSC path; HiRISE is optional later work |
 | Mercury | Existing approximately 665 m MESSENGER global source | Add improved 250 m north-polar topography covering 65–90°N | Start with the bounded polar dataset; defer other regional overlays until their benefit is demonstrated |
 | Venus | Existing Magellan dataset on an approximately 4.6 km grid | Evaluate approximately 1–2 km radar-stereo topography in selected regions | Keep the global baseline; prioritize materials and atmospheric illumination over extensive elevation processing |
@@ -195,20 +203,20 @@ Apply the shared hybrid material approach alongside the elevation work:
 
 Halving grid spacing produces roughly four times as many samples for the same area before compression. Dataset coverage, relief complexity, encoding, and compression determine actual storage and transfer costs; nominal resolution alone is not sufficient for estimates.
 
-### Measured current baseline
+### Measured baseline before the global Moon upgrade
 
-Inspected `public/terrain/catalog.json` and its four referenced manifests on 2026-10-29. Sizes below are each manifest's recorded compressed height-tile payload totals, not browser download sizes, full directory sizes, metadata, or decoded memory. Unreferenced older releases are excluded.
+Historical snapshot: inspected `public/terrain/catalog.json` and its four referenced manifests on 2026-10-29. On November 1, Moon was replaced with a 4,068.0 MB LDEM_256 release, approximately 118 m source spacing and 166 m finest north–south mesh spacing; other bodies below are unchanged. Sizes below are each manifest's recorded compressed height-tile payload totals, not browser download sizes, full directory sizes, metadata, or decoded memory. Unreferenced older releases are excluded.
 
-| Body | Current tile payload | Configured finest mesh spacing, north–south | Source spacing |
+| Body | October 29 tile payload | Configured finest mesh spacing, north–south | Source spacing |
 | --- | --- | --- | --- |
 | Moon | 283.3 MiB | 666 m | 474 m |
 | Mars | 778.7 MiB | 650 m | 463 m |
 | Mercury | 261.1 MiB | 935 m | 665 m |
 | Venus | 14.8 MiB | 9,282 m | 4,641 m |
 
-The four selected releases total approximately 1.31 GiB of compressed height payload. Check retained release duplication and metadata separately before publishing; this review does not delete any data.
+The four releases selected in that snapshot total approximately 1.31 GiB of compressed height payload. Check retained release duplication and metadata separately before publishing; this review does not delete any data.
 
-### Why global fine pyramids are excluded initially
+### Initial rationale for excluding global fine pyramids
 
 For the current two-root geographic hierarchy and 65×65 Int16 height tiles, a complete pyramid through level Z contains `2 × (4^(Z+1) − 1) / 3` tiles. Each raw height tile contains 8,450 bytes.
 

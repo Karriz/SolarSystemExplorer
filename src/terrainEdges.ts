@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import type { TerrainSurfaceSampler } from './terrainSurface.ts'
 import type { TileBounds } from './surfaceTiles.ts'
 
 export type TerrainEdge = { size: number; indices: number[]; positions: Float32Array; normals: Float32Array; skirtIndices: number[]; skirtDepths: Float32Array }
@@ -34,7 +35,7 @@ export function captureTerrainEdge(geometry: THREE.BufferGeometry, size = 65): T
  * Fine edges follow coarse ones; equal-level edges have one deterministic
  * owner. Coarse-to-fine processing also resolves multi-patch corner junctions.
  * No measured interior samples are smoothed or clipped. */
-export function stitchTerrainEdges(patches: EdgePatch[]) {
+export function stitchTerrainEdges(patches: EdgePatch[], fallback?: TerrainSurfaceSampler) {
   const ordered = [...patches].sort((a, b) => a.level - b.level || a.key.localeCompare(b.key))
   const eps = 1e-9, point = new THREE.Vector3(), normal = new THREE.Vector3()
   for (const patch of ordered) {
@@ -55,6 +56,17 @@ export function stitchTerrainEdges(patches: EdgePatch[]) {
       const row = Math.floor(index / size), col = index % size
       const lon = b.west + (b.east - b.west) * col / (size - 1)
       const lat = b.north + (b.south - b.north) * row / (size - 1)
+      // Include corners: a shared vertex can still border an uncovered
+      // quadrant. Every participating patch must use the same fallback point.
+      const delta = 1e-7
+      const exposed = fallback && [-delta, delta].some(dx => [-delta, delta].some(dy =>
+        !ordered.some(other => lon + dx >= other.bounds.west && lon + dx <= other.bounds.east
+          && lat + dy >= other.bounds.south && lat + dy <= other.bounds.north)))
+      if (exposed && fallback!(lat, lon, point, normal)) {
+        point.sub(patch.origin)
+        p.setXYZ(index, point.x, point.y, point.z); n.setXYZ(index, normal.x, normal.y, normal.z)
+        continue
+      }
       const owner = neighbors.find(other => {
         const o = other.bounds
         return lon >= o.west - eps && lon <= o.east + eps && lat >= o.south - eps && lat <= o.north + eps

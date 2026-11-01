@@ -1,11 +1,13 @@
 import * as THREE from 'three'
 
+export const MAX_SURFACE_CLIPS = 32
+
 export type SurfaceState = {
   detail: { value: number }; clips: { value: THREE.Vector4[] }; clipCount: { value: number }
   classification: { value: THREE.Texture | null }; classBounds: { value: THREE.Vector4 }; hasClassification: { value: number }
 }
 export function surfaceState(): SurfaceState {
-  return { detail: { value: 1 }, clips: { value: Array.from({ length: 4 }, () => new THREE.Vector4()) }, clipCount: { value: 0 },
+  return { detail: { value: 1 }, clips: { value: Array.from({ length: MAX_SURFACE_CLIPS }, () => new THREE.Vector4()) }, clipCount: { value: 0 },
     classification: { value: null }, classBounds: { value: new THREE.Vector4() }, hasClassification: { value: 0 } }
 }
 
@@ -28,7 +30,7 @@ export function configureSurfaceMaterial(material: THREE.Material, state: Surfac
     shader.fragmentShader = `
       varying vec3 vSurfaceUnit; varying vec3 vSurfaceDetailPosition; varying float vSurfaceSlope; uniform vec3 surfaceNoiseOrigin;
       uniform float surfaceRadius; uniform float surfaceDetail;
-      uniform vec4 surfaceClips[4]; uniform int surfaceClipCount;
+      uniform vec4 surfaceClips[${MAX_SURFACE_CLIPS}]; uniform int surfaceClipCount;
       uniform sampler2D surfaceClass; uniform vec4 surfaceClassBounds; uniform float surfaceHasClass;
       vec2 surfaceLonLat() { vec3 p = normalize(vSurfaceUnit); return vec2(atan(-p.z,p.x), asin(clamp(p.y,-1.0,1.0))) * 57.295779513; }
       bool surfaceInside(vec2 p, vec4 b) { return p.x >= b.x && p.x <= b.z && p.y >= b.y && p.y <= b.w; }
@@ -43,7 +45,7 @@ export function configureSurfaceMaterial(material: THREE.Material, state: Surfac
       ${shader.fragmentShader}`
     if (clip) shader.fragmentShader = shader.fragmentShader.replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
       vec2 clipLonLat=surfaceLonLat();
-      for(int i=0;i<4;i++) { if(i < surfaceClipCount && surfaceInside(clipLonLat,surfaceClips[i])) discard; }`)
+      for(int i=0;i<${MAX_SURFACE_CLIPS};i++) { if(i >= surfaceClipCount) break; if(surfaceInside(clipLonLat,surfaceClips[i])) discard; }`)
     shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
       vec3 detailP=vSurfaceDetailPosition+surfaceNoiseOrigin;
       float footprint=max(length(dFdx(detailP)),length(dFdy(detailP)));
@@ -73,7 +75,7 @@ export function configureSurfaceMaterial(material: THREE.Material, state: Surfac
         roughnessFactor=mix(roughnessFactor,mix(0.97,0.82,rock),detailFade);
       }`)
   }
-  material.customProgramCacheKey = () => `${previousKey}/surface-pilot-v1/${clip ? 'fallback' : 'patch'}`
+  material.customProgramCacheKey = () => `${previousKey}/surface-pilot-v2/${clip ? 'fallback' : 'patch'}`
 }
 
 /** Skirts hide mixed-LOD cracks but are not physical cliffs or shadow casters. */

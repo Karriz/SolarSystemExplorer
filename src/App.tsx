@@ -43,6 +43,9 @@ export default function App() {
   const [regionalStatuses, setRegionalStatuses] = useState<Partial<Record<'earth' | 'moon', RegionalMetrics>>>({})
   const regionalStatus = regionalStatuses[selected as 'earth' | 'moon']
   const [surfaceDetail, setSurfaceDetail] = useState(true)
+  const [wacPilot, setWacPilot] = useState(true)
+  const [wacLoading, setWacLoading] = useState(false)
+  const [wacError, setWacError] = useState(false)
   const [terrainEnabled, setTerrainEnabled] = useState(true)
   const [terrainExaggeration, setTerrainExaggeration] = useState(1)
   const [terrainStatuses, setTerrainStatuses] = useState<Partial<Record<TerrainBody, TerrainStatus>>>({})
@@ -65,7 +68,7 @@ export default function App() {
     sceneRef.current = explorer
     // Explicitly opt-in diagnostic bridge for repeatable pilot browser tests.
     if (new URLSearchParams(location.search).has('terrainPilot')) {
-      Object.assign(window, { terrainPilot: { point: (lat: number, lon: number, altitude?: number) => { explorer.surfaceLocation('earth', lat, lon, altitude); setSelected('earth') }, visit: (id: string, altitude?: number) => { explorer.pilot(id, altitude); const p = pilotLocations.find(p => p.id === id); if (p) setSelected(p.body) },
+      Object.assign(window, { terrainPilot: { location: (body: 'earth' | 'moon', lat: number, lon: number, altitude?: number) => { explorer.surfaceLocation(body, lat, lon, altitude); setSelected(body) }, point: (lat: number, lon: number, altitude?: number) => { explorer.surfaceLocation('earth', lat, lon, altitude); setSelected('earth') }, visit: (id: string, altitude?: number) => { explorer.pilot(id, altitude); const p = pilotLocations.find(p => p.id === id); if (p) setSelected(p.body) },
         sample: () => explorer.pilotImageSample(), metrics: () => explorer.pilotMetrics(), date: (iso: string) => { const next = new Date(iso); if (!Number.isNaN(next.getTime())) { explorer.setDate(next); dateRef.current = next; setDate(next) } }, detail: (enabled: boolean) => { explorer.setSurfaceDetail(enabled); setSurfaceDetail(enabled) } } })
     }
     const markerLayer = markerLayerRef.current
@@ -183,11 +186,11 @@ export default function App() {
         {selected !== 'earth' && selected !== 'moon' && selected in surfaceTileSources && <div className="surface-source">Detail: <a href={surfaceTileSources[selected as TileBody].page} target="_blank" rel="noreferrer">{surfaceTileSources[selected as TileBody].label}</a> · {surfaceTileSources[selected as TileBody].credit}</div>}
         {(selected === 'earth' || selected === 'moon') && <div className="terrain-controls">
           <div className="surface-source">Explore measured terrain</div>
-          <div role="status" className="surface-source">{regionalStatus?.ready ? 'Measured terrain' : regionalStatus?.failed ? 'Regional detail unavailable · showing fallback' : regionalStatus?.requests ? 'Loading regional relief…' : selected === 'earth' ? 'Terrain loads as you explore' : 'Regional relief at the location below'}</div>
+          <div role="status" className="surface-source">{!terrainEnabled ? 'Terrain off' : regionalStatus?.ready ? 'Measured terrain' : regionalStatus?.failed ? 'Regional detail unavailable · showing fallback' : regionalStatus?.requests ? 'Loading regional relief…' : selected === 'earth' ? 'Terrain loads as you explore' : terrainStatus.state === 'ready' ? 'Global LOLA terrain' : terrainStatus.state === 'unavailable' ? 'Lunar terrain unavailable · showing globe' : 'Loading global lunar terrain…'}</div>
           <div className="terrain-options pilot-places">{pilotLocations.filter(p => p.body === selected).map(p => <button key={p.id} onClick={() => sceneRef.current?.pilot(p.id)}>{p.name}</button>)}</div>
           {selected === 'moon' && <div className="terrain-options"><button aria-pressed={surfaceDetail} onClick={() => { sceneRef.current?.setSurfaceDetail(!surfaceDetail); setSurfaceDetail(!surfaceDetail) }}>Surface detail {surfaceDetail ? 'on' : 'off'}</button></div>}
           {selected === 'moon' && surfaceDetail && <div className="surface-source">Fine surface detail is procedural.</div>}
-          {selected === 'moon' && regionalStatus?.ready && <div className="surface-source">Elevation: <a href="https://pgda.gsfc.nasa.gov/products/54" target="_blank" rel="noreferrer">SLDEM2015 · ~118 m sampling</a></div>}
+          {selected === 'moon' && <><div className="terrain-options"><button aria-pressed={wacPilot} disabled={wacLoading || !terrainEnabled} onClick={async () => { setWacLoading(true); setWacError(false); try { await sceneRef.current?.setMoonWacPilot(!wacPilot); setWacPilot(!wacPilot) } catch { setWacError(true) } finally { setWacLoading(false) } }}>{wacLoading ? 'Loading WAC detail…' : `WAC detail ${wacPilot ? 'on' : 'off'}`}</button></div><div className="surface-source">{wacError ? 'WAC detail unavailable; using Moon color.' : <>Experimental <a href="https://data.lroc.im-ldi.com/lroc/view_rdr/WAC_EMP" target="_blank" rel="noreferrer">LROC WAC</a> 643 nm brightness detail. Local numeric tiles are used when installed; remote browse imagery is the fallback.</>}</div></>}
           {selected === 'earth' && <div className="surface-source">Color: <a href={earthColorSource.page} target="_blank" rel="noreferrer">{earthColorSource.label}</a> · {regionalStatus?.imagery?.ready ? 'streamed imagery' : 'globe fallback'} · © ESA WorldCover / modified Copernicus Sentinel data 2021</div>}
           {selected === 'earth' && <div className="surface-source">Elevation: <a href="https://mapterhorn.com/attribution/" target="_blank" rel="noreferrer">© Mapterhorn</a> · streamed terrain</div>}
         </div>}

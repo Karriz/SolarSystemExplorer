@@ -127,6 +127,20 @@ test('terrain positions, UVs, normals, and adjacent edges use the same geographi
   geometries.forEach(g => g.dispose())
 })
 
+test('convergent polar vertices share a stable radial normal across longitude tiles', () => {
+  const heights = new Float32Array(65 * 65).fill(500)
+  for (const x of [0, 7, 15]) {
+    const geometry = terrainGeometry(terrainBounds({ z: 3, x, y: 0 }), heights, 65, 1737400, 1737400, 1)
+    const normal = geometry.getAttribute('normal')
+    for (let c = 0; c < 65; c++) {
+      assert.ok(Math.abs(normal.getX(c)) < 1e-6)
+      assert.ok(Math.abs(normal.getY(c) - 1) < 1e-6)
+      assert.ok(Math.abs(normal.getZ(c)) < 1e-6)
+    }
+    geometry.dispose()
+  }
+})
+
 const flush = async () => { for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve)) }
 function setup(t, decoder = { decode: async () => new Float32Array(65 * 65), dispose() {} }, tileResponse, config = {}) {
   const status = []
@@ -171,6 +185,13 @@ test('ground picking uses visible terrain elevation and stops when terrain is di
   assert.ok(Math.abs(localRadius - ground.length()) < 1e-10)
   // The local floor follows rendered ground instead of the global maximum.
   assert.ok(localRadius < layer.cameraSurfaceRadius(new THREE.Vector3(0, 0, 2)))
+  // Tilting can cull the ground beneath the camera; cached physical ground must
+  // still supply clearance instead of jumping to the global height envelope.
+  for (const node of layer.nodes.values()) if (node.mesh) node.mesh.visible = false
+  assert.equal(layer.hitGround(ray), null)
+  assert.ok(Math.abs(layer.cameraSurfaceRadius(new THREE.Vector3(0, 0, 1.01)) - localRadius) < 1e-10)
+  assert.ok(layer.groundNode?.mesh)
+
   layer.setExaggeration(4)
   const exaggerated = layer.cameraSurfaceRadius(new THREE.Vector3(0, 0, 1.01))
   assert.ok(Math.abs(exaggerated - (1 + 4000 / 1737400)) < 1e-6)
@@ -302,4 +323,79 @@ test('unavailable detail metadata backs off while loaded parent geometry stays v
   layer.update(camera, 900, start + 1800, true)
   await flush()
   assert.equal(requests, first)
+})
+
+test('the global Moon accepts denser 129 grids while retaining bounded metadata depth and body contracts',()=>{
+  const m=manifest(1)
+  Object.assign(m,{schema:2,sampleSize:129,noData:-32768,indexPages:{rootZoom:3,pages:{}},sourceResolutionMeters:118.4505876,verticalDatum:'Height above 1737400 m reference sphere'})
+  assert.equal(parseTerrainManifest(m).sampleSize,129)
+  assert.throws(()=>parseTerrainManifest({...m,sampleSize:257}))
+  assert.throws(()=>parseTerrainManifest({...m,maxZoom:9}))
+  assert.throws(()=>parseTerrainManifest({...m,schema:1}))
+})
+
+test('dense global lunar terrain stays within the triangle and allocation limits and supplies ground sampling',async t=>{
+  const m=manifest(1)
+  Object.assign(m,{schema:2,sampleSize:129,noData:-32768,indexPages:{rootZoom:3,pages:{}},sourceResolutionMeters:118.4505876,verticalDatum:'Height above 1737400 m reference sphere'})
+  const {layer,camera}=setup(t,{decode:async()=>new Float32Array(129*129).fill(100),dispose(){}},undefined,{manifest:m})
+  await flush()
+  for(let i=0;i<4;i++){layer.update(camera,900,performance.now()+i*200,true);await flush()}
+  const visible=[...layer.nodes.values()].filter(n=>n.mesh?.visible)
+  assert.ok(visible.length>0)
+  assert.ok([...layer.nodes.values()].some(node=>node.address.z===0 && node.mesh?.geometry.getAttribute('position').count===65*65+4*(65-1)))
+  assert.ok(visible.some(node=>node.address.z===1 && node.mesh.geometry.getAttribute('position').count===129*129+4*(129-1)))
+  assert.ok(visible.reduce((sum,n)=>sum+n.mesh.geometry.index.count/3,0)<=400000)
+  assert.ok(layer.bytes<=48*1024*1024)
+  const p=new THREE.Vector3(),n=new THREE.Vector3()
+  assert.ok(layer.sampleSurface(0,-90,p,n))
+  assert.ok(Math.abs(p.length()-1)<.001)
+})
+
+
+test('close global terrain refines both sides of the dateline on flat ground', async t => {
+  const m = manifest(3)
+  for (const info of Object.values(m.tiles)) info.error = 0
+  const { layer, camera } = setup(t, undefined, undefined, { manifest: m })
+  await flush()
+  const lat = 13 * Math.PI / 180, lon = 179.99 * Math.PI / 180
+  camera.position.set(Math.cos(lat)*Math.cos(lon), Math.sin(lat), -Math.cos(lat)*Math.sin(lon)).multiplyScalar(1.01)
+  camera.lookAt(0, 0, 0)
+  const now = performance.now()
+  for (let i = 0; i < 16; i++) { layer.update(camera, 900, now + i * 200, true); await flush() }
+  const visible = [...layer.nodes.values()].filter(n => n.mesh?.visible)
+  assert.ok(visible.some(n => n.address.z === 3 && n.address.x === 0), 'west side of dateline')
+  assert.ok(visible.some(n => n.address.z === 3 && n.address.x === 15), 'east side of dateline')
+})
+
+test('stationary global LOD selection is independent of mesh residency', async t => {
+  const { layer, camera } = setup(t, { decode: async () => new Float32Array(65*65).fill(1000), dispose() {} }, undefined, { manifest: manifest(3) })
+  const lat=13*Math.PI/180,lon=25*Math.PI/180
+  camera.position.set(Math.cos(lat)*Math.cos(lon),Math.sin(lat),-Math.cos(lat)*Math.sin(lon)).multiplyScalar(1.01)
+  camera.lookAt(0,0,0)
+  await flush()
+  const now=performance.now()
+  for(let i=0;i<20;i++){layer.update(camera,900,now+i*200,true);await flush()}
+  const warm=[...layer.wanted].sort()
+  for(const node of layer.nodes.values()) if(node.mesh) layer.release(node)
+  layer.update(camera,900,now+4200,true)
+  assert.deepEqual([...layer.wanted].sort(),warm,'eviction must not change the requested detail at a fixed view')
+})
+
+test('global refinement retains off-screen siblings so panning does not drop a fine subtree to its ancestor', async t => {
+  const {layer,camera}=setup(t,undefined,undefined,{manifest:manifest(3)})
+  const lat=13*Math.PI/180,lon=25*Math.PI/180
+  camera.position.set(Math.cos(lat)*Math.cos(lon),Math.sin(lat),-Math.cos(lat)*Math.sin(lon)).multiplyScalar(1.01)
+  camera.lookAt(0,0,0)
+  await flush()
+  const now=performance.now()
+  for(let i=0;i<35;i++){layer.update(camera,900,now+i*200,true);await flush()}
+  assert.ok(layer.refined.size>0)
+  for(const key of layer.refined){
+    const parent=layer.nodes.get(key)
+    for(let dy=0;dy<2;dy++)for(let dx=0;dx<2;dx++){
+      const child=`${parent.address.z+1}/${parent.address.x*2+dx}/${parent.address.y*2+dy}`
+      assert.ok(layer.wanted.has(child),`retain sibling ${child} of ${key}`)
+      assert.ok(layer.nodes.get(child)?.mesh,`preload sibling ${child}`)
+    }
+  }
 })

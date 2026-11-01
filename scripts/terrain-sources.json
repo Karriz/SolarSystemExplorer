@@ -1,22 +1,48 @@
 {
   "moon": {
-    "product": "lola64",
-    "file": "LDEM_64.IMG",
-    "url": "https://imbrium.mit.edu/DATA/LOLA_GDR/CYLINDRICAL/IMG/LDEM_64.IMG",
-    "sha256": "1c4958699d4cffd7e777d51421b6044bba300aa0bef286a544309efb082cdbd6",
-    "width": 23040,
-    "height": 11520,
+    "product": "lola256",
+    "sha256": "55229d990a5f0c5c2f7a651fea5496913e40ce44a449ef86b7ecc1c20b671e93",
+    "width": 92160,
+    "height": 46080,
     "sourceWest": 0,
     "sourceScale": 0.5,
     "scaleMeters": 0.5,
     "referenceRadiusMeters": 1737400,
     "sourceRadiusMeters": 1737400,
-    "sourceResolutionMeters": 473.802,
-    "maxZoom": 7,
+    "sourceResolutionMeters": 118.4505876,
+    "maxZoom": 8,
     "frame": "MEAN EARTH/POLAR AXIS OF DE421",
     "verticalDatum": "Height above 1737400 m reference sphere",
     "credit": "NASA / GSFC / MIT \u00b7 LRO LOLA team",
-    "sourceUrl": "https://imbrium.mit.edu/DATA/LOLA_GDR/CYLINDRICAL/IMG/LDEM_64.LBL"
+    "sourceUrl": "https://imbrium.mit.edu/DATA/LOLA_GDR/CYLINDRICAL/IMG/",
+    "files": [
+      {
+        "file": "LDEM_256_00N_90N_000_180.IMG",
+        "url": "https://imbrium.mit.edu/DATA/LOLA_GDR/CYLINDRICAL/IMG/LDEM_256_00N_90N_000_180.IMG",
+        "bytes": 2123366400,
+        "sha256": "8822ac3e638c2444a4fe2eb1bb9333f1590c06faffff29072eb9cc8c228dcbe5"
+      },
+      {
+        "file": "LDEM_256_00N_90N_180_360.IMG",
+        "url": "https://imbrium.mit.edu/DATA/LOLA_GDR/CYLINDRICAL/IMG/LDEM_256_00N_90N_180_360.IMG",
+        "bytes": 2123366400,
+        "sha256": "eff75fbb6bd02d9e1c5ac0737f584ce7816665cdac32c609fbeec925aa352c95"
+      },
+      {
+        "file": "LDEM_256_90S_00S_000_180.IMG",
+        "url": "https://imbrium.mit.edu/DATA/LOLA_GDR/CYLINDRICAL/IMG/LDEM_256_90S_00S_000_180.IMG",
+        "bytes": 2123366400,
+        "sha256": "cfd0209ec4a4ae53e5b43fc74fcab5d9538fe1f0b33268dca58b4d8f725b7998"
+      },
+      {
+        "file": "LDEM_256_90S_00S_180_360.IMG",
+        "url": "https://imbrium.mit.edu/DATA/LOLA_GDR/CYLINDRICAL/IMG/LDEM_256_90S_00S_180_360.IMG",
+        "bytes": 2123366400,
+        "sha256": "3d73bceea5897d484b44133294ae98787a6250da860cb760e15eca581badc188"
+      }
+    ],
+    "sampleSize": 129,
+    "cacheSubdirectory": "moon-global/sources"
   },
   "mars": {
     "product": "mola128",

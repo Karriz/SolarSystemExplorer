@@ -36,7 +36,7 @@ export function parseTerrainManifest(value: unknown): TerrainManifest {
     || m.referenceRadiusMeters !== adapters[m.body].radius || m.scaleMeters !== adapters[m.body].scale
     || m.frame !== adapters[m.body].frame || m.longitude !== 'east-positive-minus180-to180' || m.rowOrder !== 'north-to-south'
     || m.offsetMeters !== 0 || m.tileUrl !== 'tiles/{z}/{x}/{y}.bin'
-    || m.sampleSize !== 65 || !Number.isInteger(m.maxZoom) || m.maxZoom < 0 || m.maxZoom > 8
+    || (m.sampleSize !== 65 && !(m.schema === 2 && m.body === 'moon' && m.sampleSize === 129)) || !Number.isInteger(m.maxZoom) || m.maxZoom < 0 || m.maxZoom > 8
     || !Number.isFinite(m.minHeightMeters) || !Number.isFinite(m.maxHeightMeters)
     || m.minHeightMeters < -32767 * m.scaleMeters || m.maxHeightMeters > 32767 * m.scaleMeters || m.minHeightMeters > m.maxHeightMeters
     || !m.tiles || typeof m.credit !== 'string' || typeof m.sourceUrl !== 'string'
@@ -109,6 +109,15 @@ export function terrainGeometry(bounds: TileBounds, heights: Float32Array, size:
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
   const normals = Array.from(geometry.getAttribute('normal').array)
+  // Every longitude converges to the same pole. Per-tile triangle normals at
+  // that singular row otherwise point in different azimuths and form bright
+  // radial wedges even when the measured heights are identical.
+  for (const row of [north === 90 ? 0 : -1, south === -90 ? size - 1 : -1]) if (row >= 0) {
+    for (let c = 0; c < size; c++) {
+      const i = row * size + c, v = new THREE.Vector3(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]).normalize()
+      normals[i * 3] = v.x; normals[i * 3 + 1] = v.y; normals[i * 3 + 2] = v.z
+    }
+  }
   // Skirts cover mixed-LOD boundaries; preserve the surface's computed normals.
   const edge = [
     ...Array.from({ length: size }, (_, c) => c),

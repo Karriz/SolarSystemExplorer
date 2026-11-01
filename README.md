@@ -11,17 +11,17 @@ Use the URL Vite prints. Left drag orbits and smoothly becomes a surface grab ne
 
 ## Terrain and material pilot
 
-The current implementation of [the upgrade plan](docs/terrain-upgrade-plan.md) adds streamed Earth terrain and color, plus a bounded lunar terrain/material prototype. [Pilot results and remaining acceptance gates](docs/terrain-pilot-results.md) record measured costs and limitations. It preserves observed regional color instead of replacing geography with generic biome colors.
+The current implementation of [the upgrade plan](docs/terrain-upgrade-plan.md) adds streamed Earth terrain and color, plus global lunar terrain and procedural surface detail. [Pilot results and remaining acceptance gates](docs/terrain-pilot-results.md) record measured costs and limitations. It preserves observed regional color instead of replacing geography with generic biome colors.
 
 - **Earth:** Mapterhorn elevation streams around the ground point in view, including beyond the Finland/Alps/Namibia bookmarks. Native 512-pixel WebP tiles are decoded directly with libwebp WASM into 129×129 geographic height grids in a worker; meshes use 33, 65, or 129 samples per side according to tile level. Numerical heights never pass through canvas readback, which Brave privacy protection can perturb. Elevation stops at zoom 15. Four view-centered zoom-8 roots, a 32-visible-leaf limit, a 400,000-triangle cap, and a 48 MiB estimated terrain cache bound streaming. Hidden parent geometry can be rebuilt from retained heights without another download. Above roughly 319 km altitude, and beyond Web Mercator's latitude limit, the base imagery globe remains available.
 - **Earth color:** hosted Sentinel-2 / WorldCover 2021 true-color PNG tiles load directly onto terrain meshes, independently capped at zoom 14. No global download, preprocessing, or application-owned imagery archive is required. Three concurrent requests and a separate 32 MiB estimated bitmap/texture cache bound color delivery. The provider covers approximately 60°S–83°N; missing/transparent tiles retain Blue Marble. This is observed satellite color, including acquisition lighting, not calibrated shadow-free albedo.
-- **Moon:** the Hadley–Apennine overlay samples SLDEM2015 at approximately 118 m, retaining the existing global LOLA release outside the overlay. Geographic tiles have common source-derived slope normals across LODs. The bounded overlay contains 341 tiles and approximately 6.7 MB of compressed height/slope data. A single view downloads only its needed tiles.
-- **Materials:** body-fixed, filtered procedural grain and roughness remain available on the Moon. Fine normals do not imply observed rocks or meter-scale measured landforms. Use **Surface detail on/off** to compare the same measured color and relief. Focused Sun shadows are available on Earth and the lunar pilot. **Shadows on/off** compares them; their contribution fades between 30 and 50 km altitude. Crack-hiding skirts do not cast shadows.
+- **Moon:** one global LOLA LDEM_256 release supplies approximately 118 m source spacing across the whole Moon, including the poles. The app no longer loads the Hadley SLDEM overlay. Versioned geographic tiles stream on demand from a 174,762-tile, approximately 4.07 GB compressed height archive; each view loads only the tiles it needs.
+- **Materials:** body-fixed, filtered procedural grain and roughness remain available on the Moon. Fine normals do not imply observed rocks or meter-scale measured landforms. Use **Surface detail on/off** to compare the same measured color and relief. Focused Sun shadows are available on Earth and the Moon. **Shadows on/off** compares them; their contribution fades between 30 and 50 km altitude. Crack-hiding skirts do not cast shadows.
 - **Color:** Earth uses the bundled NASA Blue Marble base without added relief; the overlapping streamed imagery shell is disabled. The Moon terrain uses the normalized CGI Moon Kit color rather than the baked lighting in the morphological WAC detail mosaic. Other bodies retain their existing display composites.
 
 Select Earth or Moon, then a location under **Explore measured terrain**. The buttons place the camera over that location; they follow loaded ground briefly while detail arrives. A measured-region status and elevation credit identify active overlays. Failed or missing overlays leave the underlying globe/global terrain visible.
 
-### Prepare the bounded data
+### Prepare the optional bounded experiment
 
 Python dependencies are listed in `scripts/terrain-requirements.txt`; the existing `.terrain-venv` is used automatically when present.
 
@@ -70,6 +70,19 @@ npm run terrain:benchmark -- --url http://127.0.0.1:5173
 
 The script uses the explicit `?terrainPilot=1` diagnostic bridge, freezes simulation dates, waits for streamed terrain to settle, records tracked terrain bytes/requests/build/decode counters and animation-frame times, and saves detail-on/off screenshots for desktop, phone, and landscape views. It also checks an unavailable Earth source followed by a switch to measured lunar terrain. Results are in `.terrain-cache/pilot/browser/`. Tracked terrain bytes are not a complete GPU/browser memory measurement; RAF timings on software WebGL are not hardware GPU benchmarks.
 
+Additional continuity and height checks:
+
+```sh
+npm run terrain:check-heights
+# Offscreen GPU regression for fine-tile and parent-image mapping:
+npm run terrain:check-color-uv
+npm run terrain:check-continuity -- --url http://127.0.0.1:5173
+# Phone-sized viewport; use real hardware for performance acceptance:
+npm run terrain:check-continuity -- --url http://127.0.0.1:5173 --phone
+```
+
+The continuity check records renderer identity, screenshots, network totals, JS heap, and sampled combined regional terrain/color allocations. It covers coastal water, negative land, moving root selection, and orbit fallback. These counters exclude some browser/worker/GPU allocations. See [current findings and remaining gates](docs/terrain-pilot-results.md#continuity-and-height-reference-follow-up--2026-10-31).
+
 ```sh
 npm test
 npm run terrain:validate
@@ -79,14 +92,29 @@ Tests cover camera safety and anchoring, imagery/tile mapping, numerical decodin
 
 ## Existing global planetary terrain
 
-`npm run terrain:build` prepares the versioned Moon, Mars, Mercury, and Venus baselines described in `scripts/terrain-sources.json`. It requires NumPy/Rasterio. `--offline` reuses cached sources. These datasets remain unchanged by the pilot; rebuilding them is not required to prepare the bounded overlays.
+`npm run terrain:build` prepares the versioned Moon, Mars, Mercury, and Venus baselines described in `scripts/terrain-sources.json`. It requires NumPy/Rasterio. `--offline` reuses cached sources. The Moon now uses one global LOLA LDEM_256 source; the earlier Hadley SLDEM overlay is retained as an optional preparation experiment and is not loaded by the app.
 
-The current catalog selects approximately 474 m LOLA (Moon), 463 m MOLA (Mars), 665 m MESSENGER (Mercury), and 4.6 km-grid Magellan (Venus). Source pixel spacing is not effective resolution or guaranteed accuracy. Global tiles use a 65×65 height grid with boundary skirts, parent retention, four concurrent requests, and an estimated 48 MiB terrain allocation budget. Worker decoding checks hashes and lengths. Regional layers have a separate 48 MiB estimated terrain budget and a 32-visible-leaf limit; Earth color adds a separate 32 MiB estimate; that separation is exposed in pilot measurements rather than presented as one combined memory limit.
+The current catalog selects approximately 118 m LOLA LDEM_256 (Moon), 463 m MOLA (Mars), 665 m MESSENGER (Mercury), and 4.6 km-grid Magellan (Venus). Source pixel spacing is not effective resolution or guaranteed accuracy. Moon height tiles store a 129×129 grid through level 8 (approximately 166 m finest north–south mesh spacing); other global bodies retain 65×65 grids. These are sampled rendering grids with boundary skirts, parent retention, four concurrent requests, and an estimated 48 MiB terrain allocation budget. Worker decoding checks hashes and lengths. Regional layers have a separate 48 MiB estimated terrain budget and a 32-visible-leaf limit; Earth color adds a separate 32 MiB estimate; that separation is exposed in pilot measurements rather than presented as one combined memory limit.
+
+Prepare the whole-Moon source and release:
+
+```sh
+npm run terrain:fetch-moon
+npm run terrain:build -- --bodies moon --offline
+npm run terrain:test-pipeline
+npm run terrain:validate -- public/terrain/moon/<release>/manifest.json
+```
+
+The four official LOLA quadrants total 8.49 GB. They are pinned by SHA-256 and fetched in checked, resumable byte ranges into `.terrain-cache/moon-global/sources`. The build caches a normalized Float32 raster (16.99 GB), checkpoints completed tile columns, validates the release, and only then changes the terrain catalog. Validation uses a bounded tile cache rather than retaining the full pyramid in RAM. Moon rendering uses 65×65 context meshes and 129×129 meshes at the finest level, with a 48-leaf selection cap, a 400,000-triangle cap, and the existing 48 MiB estimated terrain budget. Polar convergence can exhaust the triangle budget before reaching the finest level. `terrainPilot.metrics().global.moon` exposes the global counters for browser checks.
+
+The Moon's current CGI Moon Kit texture is intentionally retained. The proposed global Kaguya MI 750 nm/237 m reflectance replacement is pending: the catalog entry remains, but its exact original global raster was not available from the checked official download services. The available ±65° regional dataset has not been substituted.
 
 ## Sources and limits
 
+- [LOLA global elevation products](https://imbrium.mit.edu/DATA/LOLA_GDR/CYLINDRICAL/IMG/), NASA/GSFC/MIT/LRO: the four LDEM_256 quadrants provide the current whole-Moon elevation source.
+
 - [Mapterhorn coverage](https://mapterhorn.com/), [delivery](https://mapterhorn.com/data-access/), [source attribution](https://mapterhorn.com/attribution/). Advertised source resolutions vary; delivered resolution also depends on zoom/latitude. Earth relief is shown on the prototype's mean-radius sphere, not a survey-grade ellipsoid/geoid.
-- [SLDEM2015](https://pgda.gsfc.nasa.gov/products/54), NASA/GSFC/MIT/JAXA; cite Barker et al. (2016). This prototype uses one source tile and an explicitly downsampled regional subset.
+- [SLDEM2015](https://pgda.gsfc.nasa.gov/products/54), NASA/GSFC/MIT/JAXA; cite Barker et al. (2016). The optional preparation script retains one explicitly downsampled Hadley subset; this overlay is not active in the default whole-Moon configuration.
 - [ESA WorldCover Sentinel-2 composites](https://esa-worldcover.org/en/data-access): hosted 2021 RGB via Terrascope WMTS, `esa-worldcover-s2rgbnir-10m-2021-v2_tcc`, EPSG:3857, zooms 8–14. Service availability is external; fallback remains bundled.
 - [ESA WorldCover 2021 v200](https://esa-worldcover.org/en/data-access), CC BY 4.0: © ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium. Land-cover classes are not exact material/rock measurements or historical observations for arbitrary simulation dates.
 - [NASA Blue Marble base composite](https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-map/) and [CGI Moon Kit](https://svs.gsfc.nasa.gov/4720/). Photometric normalization/base composites are better rendering inputs, but are not guaranteed perfectly unlit calibrated albedo. Source details are in `src/textureSources.ts`.
@@ -94,3 +122,7 @@ The current catalog selects approximately 474 m LOLA (Moon), 463 m MOLA (Mars), 
 - Planet positions use [JPL approximate elements](https://ssd.jpl.nasa.gov/planets/approx_pos.html), valid 1800–2050; lunar motion is deliberately simplified. Rotation uses [NAIF planetary constants](https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc) and [USNO approximate Earth sidereal time](https://aa.usno.navy.mil/faq/GAST). UTC approximates UT1/TDB. Time changes orientation/illumination, not the observation epoch of fixed surface maps.
 
 Further source comparisons and constraints are in [Surface material options](docs/surface-material-options.md) and [Terrain upgrade plan](docs/terrain-upgrade-plan.md).
+
+The Moon's **WAC detail** toggle uses LROC's normalized 643 nm imagery. The default fallback is remote, display-scaled WMS imagery, with a fade above 72° latitude. When a complete local numeric release is installed, the app switches to measured reflectance tiles with an explicit coverage mask and uses the polar stereographic source at both poles. Local tiles have 0.18° gutters, lossless 10-bit reflectance in WebP, and a separate estimated 64 MiB decoded/GPU cache. Both paths modulate the existing Moon color under dynamic lighting; the local polar source replaces the streaked legacy color near the poles. This is single-band brightness detail, not measured RGB or additional terrain geometry. The base color remains available when imagery is missing. See [the results](docs/terrain-pilot-results.md#global-streamed-wac-detail).
+
+To prepare the local WAC release, run `npm run terrain:fetch-wac` and `npm run terrain:build-wac`. The downloader streams and checksums ten official 304 pixels/degree PDS products (eight equirectangular and two polar), with resumable `.stream` files in `.terrain-cache/wac-global/sources`. The builder validates those checksums and writes levels 4–8 to `public/terrain/moon/wac643-304ppd-v1/`; it publishes `manifest.json` only after all tiles finish. Restart the app after the manifest is installed to select the local release. The source files are roughly 18.8 GB in total. The WebP release size must be measured after generation; the one-tile Hadley sample was 53 KB. Host this directory beside the versioned terrain releases, since the lean app build excludes large terrain data. Local browser and polar acceptance remain required before relying on this release in production.

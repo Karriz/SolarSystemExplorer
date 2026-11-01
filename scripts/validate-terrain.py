@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Validate source-independent tile integrity, coverage, seams and nested samples."""
+from functools import lru_cache
 import gzip
 import hashlib
 import json
@@ -22,8 +23,12 @@ def validate(path):
         index.update(page)
     expected = sum(2 * 4 ** z for z in range(manifest["maxZoom"] + 1))
     assert len(index) == expected, "Incomplete tile pyramid"
-    decoded, total = {}, 0
-    for key, info in index.items():
+    checked, total = set(), 0
+
+    @lru_cache(maxsize=512)
+    def tile_at(key):
+        nonlocal total
+        info = index[key]
         blob = (path.parent / "tiles" / (key + ".bin")).read_bytes()
         assert len(blob) == info["bytes"] and hashlib.sha256(blob).hexdigest() == info["sha256"], key
         raw = gzip.decompress(blob)
@@ -32,27 +37,31 @@ def validate(path):
         physical = np.where(values == manifest.get("noData"), 0, values).astype(float) * scale
         assert physical.min() == info["min"] and physical.max() == info["max"], key
         assert manifest["minHeightMeters"] <= info["min"] <= info["max"] <= manifest["maxHeightMeters"], key
-        decoded[key] = values
-        total += len(blob)
+        if key not in checked:
+            total += len(blob)
+            checked.add(key)
+        return values
+
     for z in range(manifest["maxZoom"] + 1):
         columns, rows = 2 ** (z + 1), 2 ** z
-        north, south = decoded[f"{z}/0/0"][0, 0], decoded[f"{z}/0/{rows - 1}"][-1, -1]
+        north, south = tile_at(f"{z}/0/0")[0, 0], tile_at(f"{z}/0/{rows - 1}")[-1, -1]
         for x in range(columns):
             for y in range(rows):
                 key = f"{z}/{x}/{y}"
-                tile = decoded[key]
-                assert np.array_equal(tile[:, -1], decoded[f"{z}/{(x + 1) % columns}/{y}"][:, 0]), f"E/W seam: {key}"
+                tile = tile_at(key)
+                assert np.array_equal(tile[:, -1], tile_at(f"{z}/{(x + 1) % columns}/{y}")[:, 0]), f"E/W seam: {key}"
                 if y < rows - 1:
-                    assert np.array_equal(tile[-1], decoded[f"{z}/{x}/{y + 1}"][0]), f"N/S seam: {key}"
+                    assert np.array_equal(tile[-1], tile_at(f"{z}/{x}/{y + 1}")[0]), f"N/S seam: {key}"
                 if y == 0:
                     assert np.all(tile[0] == north), f"North pole: {key}"
                 if y == rows - 1:
                     assert np.all(tile[-1] == south), f"South pole: {key}"
                 if z:
-                    parent = decoded[f"{z - 1}/{x // 2}/{y // 2}"]
+                    parent = tile_at(f"{z - 1}/{x // 2}/{y // 2}")
                     r, c = (y % 2) * (size - 1) // 2, (x % 2) * (size - 1) // 2
                     assert np.array_equal(tile[::2, ::2], parent[r:r + size // 2 + 1, c:c + size // 2 + 1]), f"Parent alignment: {key}"
-    print(f"Validated {manifest['body']}: {len(decoded)} tiles ({total / 1e6:.1f} MB), hashes, bounds, all seams, poles, parent alignment", flush=True)
+    assert len(checked) == expected
+    print(f"Validated {manifest['body']}: {len(checked)} tiles ({total / 1e6:.1f} MB), hashes, bounds, all seams, poles, parent alignment", flush=True)
 
 
 if __name__ == "__main__":

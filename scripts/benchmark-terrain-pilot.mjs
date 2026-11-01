@@ -11,11 +11,13 @@ const executablePath = process.argv.includes('--executable') ? value('--executab
 const browser = await chromium.launch({ headless: true, executablePath, args: ['--no-sandbox'] })
 const report = { generatedAt: new Date().toISOString(), browser: browser.version(), cases: [], failures: [] }
 
+const terrainMetrics = (metrics, body) => body === 'moon' ? metrics.global.moon : metrics.regional.earth
+
 async function settle(page, body) {
   let last = -1, stable = 0
   for (let i = 0; i < 120; i++) {
     const metrics = await page.evaluate(() => window.terrainPilot.metrics())
-    const m = metrics.regional[body]
+    const m = terrainMetrics(metrics, body)
     if (m.ready && m.requests === 0 && m.cached === last) stable++; else stable = 0
     if (stable >= 3) return metrics
     last = m.cached
@@ -66,10 +68,11 @@ try {
       const started = Date.now()
       const metrics = await settle(page,body)
       const settleMs = Date.now()-started
-      assert.ok(metrics.regional[body].memoryBytes <= 48*1024*1024)
-      assert.ok(metrics.regional[body].triangles <= metrics.regional[body].triangleBudget)
-      if (body === 'earth') assert.ok(metrics.regional[body].imagery.memoryBytes <= 32*1024*1024)
-      assert.equal(metrics.regional[body].failed,0)
+      const terrain = terrainMetrics(metrics, body)
+      assert.ok(terrain.memoryBytes <= 48*1024*1024)
+      assert.ok(terrain.triangles <= terrain.triangleBudget)
+      if (body === 'earth') assert.ok(terrain.imagery.memoryBytes <= 32*1024*1024)
+      assert.equal(terrain.failed,0)
       assert.ok(Math.abs(metrics.altitudeMeters-altitude)<2, `Altitude ${metrics.altitudeMeters}`)
       const on = await frames(page)
       await page.screenshot({path:resolve(output,`${viewportName}-${id}-${altitude}-detail.png`)})
@@ -80,7 +83,7 @@ try {
       const record = {viewportName,viewport,id,requestedAltitudeMeters:altitude,settleMs,metrics,colorMetrics,detailComparison:body === 'moon',detailOn:on,detailOff:off,glInfo,errors:[...errors]}
       report.cases.push(record)
       await writeFile(resolve(output,'results.json'),JSON.stringify(report,null,2)+'\n')
-      console.log(`${viewportName} ${id} ${altitude}m: ${metrics.regional[body].visible} patches, ${(metrics.regional[body].memoryBytes/1048576).toFixed(1)} MiB tracked terrain, ${on.p95Ms.toFixed(1)}ms p95 RAF`)
+      console.log(`${viewportName} ${id} ${altitude}m: ${terrain.visible} patches, ${(terrain.memoryBytes/1048576).toFixed(1)} MiB tracked terrain, ${on.p95Ms.toFixed(1)}ms p95 RAF`)
       assert.equal(errors.length,0, errors.join('\n'))
     }
     // Ground-anchored input and zoom remain usable at the floor.
