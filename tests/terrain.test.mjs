@@ -152,7 +152,7 @@ function setup(t, decoder = { decode: async () => new Float32Array(65 * 65), dis
     return tileResponse ? tileResponse(url, options) : new Response(compressed)
   })
   const body = new THREE.Mesh(new THREE.SphereGeometry(1), new THREE.MeshStandardMaterial())
-  const layer = new GlobeTerrainLayer(body, value => status.push(value), 'http://localhost/terrain/', () => decoder)
+  const layer = new GlobeTerrainLayer(body, value => status.push(value), 'http://localhost/terrain/', () => decoder, 'moon', config.surface)
   const camera = new THREE.PerspectiveCamera(48, 1, .001, 100)
   camera.position.set(0, 0, 1.2); camera.lookAt(0, 0, 0)
   t.after(() => layer.dispose())
@@ -345,10 +345,10 @@ test('dense global lunar terrain stays within the triangle and allocation limits
   for(let i=0;i<8;i++){layer.update(camera,900,performance.now()+i*200,true);await flush()}
   const visible=[...layer.nodes.values()].filter(n=>n.mesh?.visible)
   assert.ok(visible.length>0)
-  assert.ok([...layer.nodes.values()].some(node=>node.address.z===0 && node.mesh?.geometry.getAttribute('position').count===65*65+4*(65-1)))
+  assert.ok([...layer.nodes.values()].some(node=>node.address.z===0 && node.mesh && layer.nodeSize(node)<129))
   for(const node of visible){
-    const dense=node.address.z>=m.maxZoom
-    const expected=(dense?129*129:65*65)+4*(dense?128:64)
+    const size=layer.nodeSize(node)
+    const expected=size*size+4*(size-1)
     assert.equal(node.mesh.geometry.getAttribute('position').count,expected,`tile ${node.address.z}/${node.address.x}/${node.address.y}`)
   }
   assert.ok(visible.reduce((sum,n)=>sum+n.mesh.geometry.index.count/3,0)<=400000)
@@ -356,14 +356,11 @@ test('dense global lunar terrain stays within the triangle and allocation limits
   const p=new THREE.Vector3(),n=new THREE.Vector3()
   assert.ok(layer.sampleSurface(0,-90,p,n))
   assert.ok(Math.abs(p.length()-1)<.001)
-  // Synthetic sub-resolution levels derive from measured parents without
-  // network tile requests.
-  assert.ok(visible.some(node=>node.address.z>m.maxZoom))
-  assert.ok(visible.every(node=>node.address.z<=m.maxZoom || node.mesh.geometry.getAttribute('position').count===129*129+4*(129-1)))
-  assert.ok(tileUrls.every(url=>Number(url.match(/tiles\/(\d+)\//)[1])<=m.maxZoom),'synthetic levels must not fetch tiles')
+  assert.ok(visible.every(node=>node.address.z<=m.maxZoom))
+  assert.ok(tileUrls.every(url=>Number(url.match(/tiles\/(\d+)\//)[1])<=m.maxZoom),'never request sub-resolution terrain')
 })
 
-test('disabling procedural surface detail stops sub-resolution refinement without discarding measured terrain',async t=>{
+test('material detail never changes measured terrain or starts additional terrain work',async t=>{
   const m=manifest(1)
   Object.assign(m,{schema:2,sampleSize:129,noData:-32768,indexPages:{rootZoom:3,pages:{}},sourceResolutionMeters:118.4505876,verticalDatum:'Height above 1737400 m reference sphere'})
   const surface=surfaceState()
@@ -385,6 +382,146 @@ test('disabling procedural surface detail stops sub-resolution refinement withou
   assert.ok(visible.length>0)
   assert.ok(visible.every(node=>node.address.z<=m.maxZoom))
   assert.ok(visible.some(node=>node.address.z===m.maxZoom))
+  const signature=layer.surfaceSignature(), meshes=visible.map(node=>node.mesh.geometry.id), bytes=layer.metrics().memoryBytes
+  let toggleTime=performance.now()+10000
+  for(const enabled of [1,0,1,0]){
+    surface.detail.value=enabled
+    layer.update(camera,900,toggleTime+=200,true);await flush()
+    assert.equal(layer.surfaceSignature(),signature)
+    assert.deepEqual(visible.map(node=>node.mesh.geometry.id),meshes)
+    assert.equal(layer.metrics().memoryBytes,bytes)
+    assert.equal(layer.metrics().requests,0)
+    assert.ok([...layer.nodes.values()].every(node=>node.address.z<=m.maxZoom))
+  }
+})
+
+function densePagedManifest(elevation = () => ({ min: 100, max: 100 })) {
+  // Match the deployed 129-sample, level-8 pyramid, including paged metadata.
+  // A shallow pyramid cannot expose ancestors consuming the close-view budget.
+  const m = manifest(3), pages = {}
+  Object.assign(m, { schema: 2, sampleSize: 129, maxZoom: 8, noData: -32768,
+    sourceResolutionMeters: 118.4505876, verticalDatum: 'Height above reference sphere',
+    indexPages: { rootZoom: 3, pages: {} } })
+  const info = { ...m.tiles['0/0/0'], error: 0 }
+  for (const key of Object.keys(m.tiles)) m.tiles[key] = { ...info, ...elevation(key) }
+  for (let px = 0; px < 16; px++) for (let py = 0; py < 8; py++) {
+    const key = `${px}/${py}`, tiles = {}
+    for (let z = 4; z <= m.maxZoom; z++) {
+      const factor = 2 ** (z - 3)
+      for (let x = px * factor; x < (px + 1) * factor; x++)
+        for (let y = py * factor; y < (py + 1) * factor; y++) {
+          const address = `${z}/${x}/${y}`
+          tiles[address] = { ...info, ...elevation(address) }
+        }
+    }
+    const payload = Buffer.from(JSON.stringify(tiles))
+    pages[key] = payload
+    m.indexPages.pages[key] = { url: `indices/${key}.json`, bytes: payload.length, sha256: sha(payload) }
+  }
+  return { m, pages }
+}
+
+test('level-8 lunar coverage retains native measured terrain independently of material detail', async t => {
+  const { m, pages } = densePagedManifest()
+  const surface = surfaceState()
+  const { layer, camera } = setup(t, { decode: async () => new Float32Array(129 * 129).fill(100), dispose() {} }, undefined, {
+    manifest: m, surface, pageResponse: async url => new Response(pages[String(url).split('/indices/')[1].replace('.json', '')]),
+  })
+  camera.near = 1e-7
+  camera.updateProjectionMatrix()
+  await flush()
+  let now = performance.now()
+  const settle = async () => {
+    for (let i = 0; i < 40; i++) {
+      layer.update(camera, 600, now += 200, true)
+      await flush()
+      const metrics = layer.metrics()
+      assert.ok(metrics.triangles <= metrics.triangleBudget, `triangle budget at ${metrics.maxLevel}`)
+      assert.ok(metrics.memoryBytes <= 128 * 1024 * 1024)
+    }
+    assert.equal(layer.metrics().requests, 0)
+    assert.equal(layer.metrics().failed, 0)
+    const residentBytes = [...layer.nodes.values()].reduce((sum, node) => {
+      if (!node.mesh) return sum
+      const geometry = node.mesh.geometry
+      return sum + node.heights.byteLength + Object.values(geometry.attributes).reduce((bytes, a) => bytes + a.array.byteLength * 2, 0)
+        + geometry.index.array.byteLength * 2
+    }, 0)
+    assert.equal(layer.metrics().memoryBytes, residentBytes, 'density changes update allocation accounting')
+    assert.equal(layer.group.children.length, layer.metrics().cached, 'synchronous synthesis never leaves duplicate meshes')
+  }
+  for (const [lat, lon] of [[26.13, 3.63], [-43.31, -11.36]]) {
+    const theta = lat * Math.PI / 180, phi = lon * Math.PI / 180
+    camera.position.set(Math.cos(theta) * Math.cos(phi), Math.sin(theta), -Math.cos(theta) * Math.sin(phi))
+      .multiplyScalar(1 + 200 / m.referenceRadiusMeters)
+    camera.lookAt(0, 0, 0)
+    surface.detail.value = 0
+    await settle()
+    assert.equal(layer.metrics().maxLevel, m.maxZoom, 'reach native measured terrain with detail off')
+    const beforeToggle=layer.surfaceSignature(), geometryIds=[...layer.nodes.values()].filter(n=>n.mesh).map(n=>n.mesh.geometry.id)
+    surface.detail.value = 1
+    await settle()
+    assert.equal(layer.surfaceSignature(),beforeToggle,'enabling material detail leaves measured geometry untouched')
+    assert.deepEqual([...layer.nodes.values()].filter(n=>n.mesh).map(n=>n.mesh.geometry.id),geometryIds)
+    assert.equal(layer.metrics().maxLevel, m.maxZoom, 'material detail never adds finer terrain levels')
+    const finest = [...layer.nodes.values()].filter(node => node.mesh?.visible && node.address.z === m.maxZoom)
+    assert.ok(finest.some(node => node.mesh.geometry.attributes.position.count === 129 * 129 + 4 * 128),
+      'visible measured terrain retains the full 129-sample grid')
+    const ray = new THREE.Ray(camera.position.clone(), camera.position.clone().normalize().negate())
+    const ground = layer.hitGround(ray), point = new THREE.Vector3(), normal = new THREE.Vector3()
+    assert.ok(ground)
+    assert.ok(layer.sampleSurface(lat, lon, point, normal))
+    assert.ok(point.distanceTo(ground) < 1e-6, 'sampling follows the displayed grid after density changes')
+    const wanted = [...layer.wanted].sort(), drawn = layer.surfaceSignature()
+    await settle()
+    assert.deepEqual([...layer.wanted].sort(), wanted)
+    assert.equal(layer.surfaceSignature(), drawn)
+    for (const key of layer.refined) {
+      const node = layer.nodes.get(key)
+      for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+        const child = `${node.address.z + 1}/${node.address.x * 2 + dx}/${node.address.y * 2 + dy}`
+        assert.ok(layer.nodes.get(child)?.mesh, `retain coverage sibling ${child}`)
+        if (!layer.refined.has(child)) assert.equal(layer.nodes.get(child).mesh.visible, true)
+      }
+    }
+  }
+})
+
+test('nearby lunar tiles on both sides of an elevation-envelope boundary get finest detail', async t => {
+  const { m, pages } = densePagedManifest(key => {
+    const [z, x] = key.split('/').map(Number)
+    const b = terrainBounds({ z, x, y: 0 })
+    return { min: b.west < 3.515625 ? -9000 : 7000, max: 9000 }
+  })
+  m.minHeightMeters = -9000; m.maxHeightMeters = 9000
+  const { layer, camera } = setup(t, { decode: async () => new Float32Array(129 * 129).fill(7500), dispose() {} }, undefined, {
+    manifest: m, pageResponse: async url => new Response(pages[String(url).split('/indices/')[1].replace('.json', '')]),
+  })
+  const lat = 26.015625, lon = 3.515625, theta = lat * Math.PI / 180, phi = lon * Math.PI / 180
+  camera.position.set(Math.cos(theta) * Math.cos(phi), Math.sin(theta), -Math.cos(theta) * Math.sin(phi))
+    .multiplyScalar(1 + 7600 / m.referenceRadiusMeters)
+  camera.near = 1e-7; camera.updateProjectionMatrix(); camera.lookAt(0, 0, 0)
+  await flush()
+  const now = performance.now()
+  for (let i = 0; i < 50; i++) {
+    layer.update(camera, 800, now + i * 200, true)
+    await flush()
+    assert.ok(layer.metrics().triangles <= 400000)
+    assert.ok(layer.metrics().memoryBytes <= 128 * 1048576)
+  }
+  assert.equal(layer.metrics().requests, 0)
+  // These samples are all within 25 m of the ground below the camera. Checking
+  // maxLevel alone misses a coarse nearby tile beside a fine distant one.
+  for (const dx of [-.0005, .0005]) for (const dy of [-.0005, .0005]) {
+    const node = [...layer.nodes.values()].find(n => {
+      if (!n.mesh?.visible) return false
+      const b = terrainBounds(n.address)
+      return lon + dx >= b.west && lon + dx <= b.east && lat + dy >= b.south && lat + dy <= b.north
+    })
+    assert.ok(node)
+    assert.equal(node.address.z, m.maxZoom, `coarse nearby tile at ${lat + dy}, ${lon + dx}: ${node.key}`)
+    assert.equal(layer.nodeSize(node), 129)
+  }
 })
 
 
@@ -432,6 +569,7 @@ test('global refinement retains off-screen siblings so panning does not drop a f
       const child=`${parent.address.z+1}/${parent.address.x*2+dx}/${parent.address.y*2+dy}`
       assert.ok(layer.wanted.has(child),`retain sibling ${child} of ${key}`)
       assert.ok(layer.nodes.get(child)?.mesh,`preload sibling ${child}`)
+      if (!layer.refined.has(child)) assert.equal(layer.nodes.get(child).mesh.visible, true, `draw sibling ${child} outside the view`)
     }
   }
 })

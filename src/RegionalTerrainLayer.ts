@@ -6,7 +6,8 @@ import { EarthImagery, configureEarthColor, earthColorUvs, earthColorTransform }
 import { bodyInfo } from './ephemeris.ts'
 import { terrainChildren, terrainGeometry } from './terrain.ts'
 import { tileBoundingSphere } from './GlobeTileLayer.ts'
-import { configureSurfaceMaterial, configureTerrainDepth, type SurfaceState } from './surfaceMaterial.ts'
+import { configureTerrainDepth, type SurfaceState } from './surfaceMaterial.ts'
+import { configureMoonSurfaceMaterial, configureMoonTerrainDepth } from './moonSurfaceMaterial.ts'
 import { geoDirection, tileKey, type RegionalSource, type TerrainPatch } from './terrainPilot.ts'
 import type { TileAddress } from './surfaceTiles.ts'
 
@@ -48,6 +49,7 @@ export class RegionalTerrainLayer {
   private body: THREE.Mesh
   readonly bodyId: 'earth' | 'moon'
   private state: SurfaceState
+  private moonCamera = { value: new THREE.Vector3() }
 
   constructor(body: THREE.Mesh, bodyId: 'earth' | 'moon', state: SurfaceState) {
     this.body = body; this.bodyId = bodyId; this.state = state
@@ -68,6 +70,12 @@ export class RegionalTerrainLayer {
   }
   setFallbackSurface(sample: TerrainSurfaceSampler, signature: () => string) {
     this.fallbackSurface = sample; this.fallbackSignature = signature; this.edgeSignature = ''
+  }
+  /** Group-local camera shared by lunar patches, in the same space as their origins. */
+  updateShadeCamera(camera: THREE.Camera) {
+    if (this.bodyId !== 'moon') return
+    this.body.updateWorldMatrix(true, true)
+    this.moonCamera.value.copy(this.body.worldToLocal(camera.position.clone())).divideScalar(this.radius)
   }
   setEnabled(enabled: boolean) {
     this.enabled = enabled
@@ -323,7 +331,7 @@ export class RegionalTerrainLayer {
       node.gradients = patch.gradients
       const started = performance.now()
       const material = new THREE.MeshStandardMaterial({ map: this.base.map, roughness: 1, metalness: 0 })
-      if (this.bodyId !== 'earth') configureSurfaceMaterial(material, this.state, this.radiusMeters, 1, false, node.origin)
+      if (this.bodyId === 'moon') configureMoonSurfaceMaterial(material, this.state, this.radiusMeters, false, node.origin, this.moonCamera)
       else { node.color = { value: 0 }; node.colorTransform = { value: new THREE.Vector4(1, 1, 0, 0) }; configureEarthColor(material, node.color, this.fallbackColor, node.colorTransform) }
       node.mesh = new THREE.Mesh(this.geometry(node), material)
       node.edge = captureTerrainEdge(node.mesh.geometry, this.gridSize(node))
@@ -337,7 +345,8 @@ export class RegionalTerrainLayer {
       {
         const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })
         node.mesh.customDepthMaterial = depth
-        configureTerrainDepth(depth, this.state, this.radiusMeters, false, node.origin)
+        if (this.bodyId === 'moon') configureMoonTerrainDepth(depth, this.state, this.radiusMeters, false, node.origin, this.moonCamera)
+        else configureTerrainDepth(depth, this.state, this.radiusMeters, false, node.origin)
       }
       node.mesh.castShadow = true; node.mesh.receiveShadow = true; node.mesh.visible = false
       this.group.add(node.mesh)

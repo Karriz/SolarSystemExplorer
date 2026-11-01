@@ -43,9 +43,6 @@ export default function App() {
   const [regionalStatuses, setRegionalStatuses] = useState<Partial<Record<'earth' | 'moon', RegionalMetrics>>>({})
   const regionalStatus = regionalStatuses[selected as 'earth' | 'moon']
   const [surfaceDetail, setSurfaceDetail] = useState(true)
-  const [wacPilot, setWacPilot] = useState(false)
-  const [wacLoading, setWacLoading] = useState(false)
-  const [wacError, setWacError] = useState(false)
   const [terrainEnabled, setTerrainEnabled] = useState(true)
   const [terrainExaggeration, setTerrainExaggeration] = useState(1)
   const [terrainStatuses, setTerrainStatuses] = useState<Partial<Record<TerrainBody, TerrainStatus>>>({})
@@ -189,8 +186,8 @@ export default function App() {
           <div role="status" className="surface-source">{!terrainEnabled ? 'Terrain off' : regionalStatus?.ready ? 'Measured terrain' : regionalStatus?.failed ? 'Regional detail unavailable · showing fallback' : regionalStatus?.requests ? 'Loading regional relief…' : selected === 'earth' ? 'Terrain loads as you explore' : terrainStatus.state === 'ready' ? 'Global LOLA terrain' : terrainStatus.state === 'unavailable' ? 'Lunar terrain unavailable · showing globe' : 'Loading global lunar terrain…'}</div>
           <div className="terrain-options pilot-places">{pilotLocations.filter(p => p.body === selected).map(p => <button key={p.id} onClick={() => sceneRef.current?.pilot(p.id)}>{p.name}</button>)}</div>
           {selected === 'moon' && <div className="terrain-options"><button aria-pressed={surfaceDetail} onClick={() => { sceneRef.current?.setSurfaceDetail(!surfaceDetail); setSurfaceDetail(!surfaceDetail) }}>Surface detail {surfaceDetail ? 'on' : 'off'}</button></div>}
-          {selected === 'moon' && surfaceDetail && <div className="surface-source">Fine surface detail is procedural.</div>}
-          {selected === 'moon' && <><div className="terrain-options"><button aria-pressed={wacPilot} disabled={wacLoading || !terrainEnabled} onClick={async () => { setWacLoading(true); setWacError(false); try { await sceneRef.current?.setMoonWacPilot(!wacPilot); setWacPilot(!wacPilot) } catch { setWacError(true) } finally { setWacLoading(false) } }}>{wacLoading ? 'Loading WAC detail…' : `WAC detail ${wacPilot ? 'on' : 'off'}`}</button></div><div className="surface-source">{wacError ? 'WAC detail unavailable; using Moon color.' : <>Optional legacy <a href="https://data.lroc.im-ldi.com/lroc/view_rdr/WAC_EMP" target="_blank" rel="noreferrer">LROC WAC</a> 643 nm brightness detail, off by default. The lunar surface uses flat-shaded measured terrain with procedural facet detail.</>}</div></>}
+          {selected === 'moon' && surfaceDetail && <div className="surface-source">Fine surface detail uses generated normal and roughness textures.</div>}
+          {selected === 'moon' && <div className="surface-source">The lunar surface uses smooth-shaded measured terrain.</div>}
           {selected === 'earth' && <div className="surface-source">Color: <a href={earthColorSource.page} target="_blank" rel="noreferrer">{earthColorSource.label}</a> · {regionalStatus?.imagery?.ready ? 'streamed imagery' : 'globe fallback'} · © ESA WorldCover / modified Copernicus Sentinel data 2021</div>}
           {selected === 'earth' && <div className="surface-source">Elevation: <a href="https://mapterhorn.com/attribution/" target="_blank" rel="noreferrer">© Mapterhorn</a> · streamed terrain</div>}
         </div>}

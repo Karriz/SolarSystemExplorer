@@ -1,13 +1,18 @@
 import * as THREE from 'three'
+import { configureTerrainShadowFade } from './terrainShadows.ts'
 
 export const MAX_SURFACE_CLIPS = 32
 
 export type SurfaceState = {
   detail: { value: number }; clips: { value: THREE.Vector4[] }; clipCount: { value: number }
+  detailMap: { value: THREE.Texture | null }; detailMapReady: { value: number }
+  mediumDetailMap: { value: THREE.Texture | null }; mediumDetailReady: { value: number }
   classification: { value: THREE.Texture | null }; classBounds: { value: THREE.Vector4 }; hasClassification: { value: number }
 }
 export function surfaceState(): SurfaceState {
-  return { detail: { value: 1 }, clips: { value: Array.from({ length: MAX_SURFACE_CLIPS }, () => new THREE.Vector4()) }, clipCount: { value: 0 },
+  return { detail: { value: 1 }, detailMap: { value: null }, detailMapReady: { value: 0 },
+    mediumDetailMap: { value: null }, mediumDetailReady: { value: 0 },
+    clips: { value: Array.from({ length: MAX_SURFACE_CLIPS }, () => new THREE.Vector4()) }, clipCount: { value: 0 },
     classification: { value: null }, classBounds: { value: new THREE.Vector4() }, hasClassification: { value: 0 } }
 }
 
@@ -72,10 +77,18 @@ export function configureSurfaceMaterial(material: THREE.Material, state: Surfac
         float det=dot(sx,r1);
         normal=normalize(abs(det)*normal-sign(det)*(dFdx(bump)*r1+dFdy(bump)*r2));
         diffuseColor.rgb *= 1.0 + (coarse-0.5)*0.055*detailFade;
+        #ifdef FLAT_SHADED
+          // Low-poly facets read best with a small per-facet albedo jitter.
+          // The ~36 m noise scale matches the finest synthesized facets and
+          // stays mean-preserving over regional distances.
+          float meso=surfaceNoise(detailP*0.028+vec3(5.0,9.0,3.0));
+          diffuseColor.rgb *= 1.0 + (meso-0.5)*0.09*detailFade;
+        #endif
         roughnessFactor=mix(roughnessFactor,mix(0.97,0.82,rock),detailFade);
       }`)
   }
   material.customProgramCacheKey = () => `${previousKey}/surface-pilot-v2/${clip ? 'fallback' : 'patch'}`
+  configureTerrainShadowFade(material)
 }
 
 /** Skirts hide mixed-LOD cracks but are not physical cliffs or shadow casters. */

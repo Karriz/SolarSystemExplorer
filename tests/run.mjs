@@ -8,7 +8,6 @@ import './terrariumDecode.test.mjs'
 import './earthImagery.test.mjs'
 
 import './terrainSurface.test.mjs'
-import './lunarDetail.test.mjs'
 
-import './moonWacPilot.test.mjs'
-import './moonWacGlobal.test.mjs'
+import './moonSurfaceMaterial.test.mjs'
+import './terrainShadows.test.mjs'

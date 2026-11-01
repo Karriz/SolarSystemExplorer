@@ -37,9 +37,9 @@ export const textureSources: Partial<Record<BodyId, TextureSource>> = {
     file: 'moon.jpg',
     label: 'CGI Moon Kit color map',
     page: 'https://svs.gsfc.nasa.gov/4720/',
-    download: 'https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color_2k.jpg',
+    download: 'https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color_16bit_srgb_8k.tif',
     credit: 'NASA Scientific Visualization Studio / LRO',
-    note: '2025 LRO color composite, 2048 × 1024. Polar gaps use lower resolution albedo data.',
+    note: '2025 LRO color composite, 8192 × 4096. Polar gaps use lower resolution albedo data.',
   },
   mars: {
     file: 'mars.jpg',

@@ -10,7 +10,9 @@ import { terrainBodies, type TerrainBody } from './terrain'
 import { RegionalTerrainLayer, type RegionalMetrics } from './RegionalTerrainLayer'
 import { earthPilotSources } from './RegionalTerrainSource'
 import { configureSurfaceMaterial, surfaceState } from './surfaceMaterial'
+import { configureMoonSurfaceMaterial, type MoonShade } from './moonSurfaceMaterial'
 import { geoDirection, pilotLocations } from './terrainPilot'
+import { fitTerrainShadow } from './terrainShadows'
 
 export type ScreenMarker = { id: BodyId; x: number; y: number; visible: boolean }
 const DAY_MS = 86400000
@@ -113,6 +115,7 @@ export class ExplorerScene {
   private surfaceTiles: GlobeTileLayer
   private terrain = new Map<TerrainBody, GlobeTerrainLayer>()
   private surfaces = { earth: surfaceState(), moon: surfaceState() }
+  private moonShade?: MoonShade
   private regional = new Map<'earth' | 'moon', RegionalTerrainLayer>()
   private pilotMetricsKey = ''
   private onPilotStatus?: (body: 'earth' | 'moon', metrics: RegionalMetrics) => void
@@ -132,11 +135,9 @@ export class ExplorerScene {
     // perspective depth precise at both globe and Solar System distances.
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' })
     this.renderer.shadowMap.enabled = true
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    this.renderer.shadowMap.type = THREE.PCFShadowMap
     this.terrainSun.castShadow = true
-    this.terrainSun.shadow.mapSize.set(1024, 1024)
-    this.terrainSun.shadow.bias = -0.00001
-    this.terrainSun.shadow.normalBias = 1 / 149_597_870_700
+    this.terrainSun.shadow.mapSize.set(2048, 2048)
     this.scene.add(this.terrainSun, this.terrainSun.target)
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
@@ -156,6 +157,18 @@ export class ExplorerScene {
     this.scene.add(this.stars)
     this.surfaces.earth.detail.value = 0
     this.createBodies()
+    for (const layer of [
+      { file: 'moon-detail.png', map: this.surfaces.moon.detailMap, ready: this.surfaces.moon.detailMapReady },
+      { file: 'moon-medium-detail.png', map: this.surfaces.moon.mediumDetailMap, ready: this.surfaces.moon.mediumDetailReady },
+    ]) this.textureLoader.load(`${import.meta.env.BASE_URL}textures/${layer.file}`, texture => {
+      if (this.disposed) { texture.dispose(); return }
+      texture.colorSpace = THREE.NoColorSpace
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping
+      texture.minFilter = THREE.LinearMipmapLinearFilter
+      texture.anisotropy = Math.min(4, this.renderer.capabilities.getMaxAnisotropy())
+      layer.map.value = texture
+      layer.ready.value = 1
+    }, undefined, () => { /* Measured terrain remains usable if detail is unavailable. */ })
     this.surfaceTiles = new GlobeTileLayer(this.bodies, this.renderer, new Set(['earth', 'moon']))
     for (const id of terrainBodies) this.terrain.set(id, new GlobeTerrainLayer(this.bodies.get(id)!, onTerrainStatus,
       new URL(import.meta.env.VITE_TERRAIN_BASE_URL || `${import.meta.env.BASE_URL}terrain/`, window.location.href).href, undefined, id, id === 'moon' ? this.surfaces.moon : undefined))
@@ -175,14 +188,19 @@ export class ExplorerScene {
       const geometry = new THREE.SphereGeometry(radius, id === 'sun' ? 96 : 128, 96)
       const material = id === 'sun'
         ? new THREE.MeshBasicMaterial({ color: '#ffda87' })
-        : new THREE.MeshStandardMaterial({ map: makeTexture(id), roughness: 1, metalness: 0, flatShading: id === 'moon' })
-      if (id === 'earth' || id === 'moon') configureSurfaceMaterial(material, this.surfaces[id], bodyInfo[id].radiusKm * 1000, 1 / radius, true)
+        : new THREE.MeshStandardMaterial({ map: makeTexture(id), roughness: 1, metalness: 0 })
+      if (id === 'earth') configureSurfaceMaterial(material, this.surfaces[id], bodyInfo[id].radiusKm * 1000, 1 / radius, true)
+      if (id === 'moon') this.moonShade = configureMoonSurfaceMaterial(material, this.surfaces.moon, 149_597_870_700, true)
       const mesh = new THREE.Mesh(geometry, material)
       mesh.castShadow = id !== 'earth'
       mesh.receiveShadow = id !== 'earth'
-      if (id === 'earth' || id === 'moon') {
+      if (id === 'earth') {
         mesh.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })
-        configureSurfaceMaterial(mesh.customDepthMaterial, this.surfaces[id], bodyInfo[id].radiusKm * 1000, 1 / radius, true)
+        configureSurfaceMaterial(mesh.customDepthMaterial, this.surfaces.earth, bodyInfo.earth.radiusKm * 1000, 1 / radius, true)
+      }
+      if (id === 'moon' && this.moonShade) {
+        mesh.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })
+        configureMoonSurfaceMaterial(mesh.customDepthMaterial, this.surfaces.moon, 149_597_870_700, true, new THREE.Vector3(), this.moonShade.camera)
       }
       mesh.userData.bodyId = id
       this.scene.add(mesh)
@@ -326,7 +344,6 @@ export class ExplorerScene {
   setTerrainExaggeration(value: number) { this.terrain.forEach(layer => layer.setExaggeration(value)); this.regional.forEach(layer => layer.setExaggeration(value)) }
   private terrainShadows = true
   setTerrainShadows(enabled: boolean) { this.terrainShadows = enabled }
-  async setMoonWacPilot(enabled: boolean) { await this.terrain.get('moon')?.setWacPilot(enabled) }
   setSurfaceDetail(enabled: boolean) { this.surfaces.moon.detail.value = enabled ? 1 : 0 }
   pilot(id: string, altitude?: number) {
     const location = pilotLocations.find(p => p.id === id)
@@ -471,6 +488,13 @@ export class ExplorerScene {
       this.camera.updateProjectionMatrix()
     }
     this.stars.position.copy(this.camera.position)
+    this.terrain.get('moon')?.updateShadeCamera(this.camera)
+    this.regional.get('moon')?.updateShadeCamera(this.camera)
+    const moonBody = this.bodies.get('moon')
+    if (this.moonShade && moonBody) {
+      moonBody.updateWorldMatrix(true, false)
+      this.moonShade.camera.value.copy(moonBody.worldToLocal(this.camera.position.clone()))
+    }
     this.surfaceTiles.update(this.camera, viewportHeight, now, this.selected === 'moon' ? 'moon' : this.selected === 'earth' && this.surfaces.earth.clipCount.value > 0 ? 'earth' : terrainBody)
     const closeTerrain = this.selected === 'moon' ? !!this.terrain.get('moon')?.active
       : !!this.regional.get(this.selected as 'earth' | 'moon')?.metrics().ready
@@ -479,16 +503,11 @@ export class ExplorerScene {
     this.terrainSun.intensity = 3 * shadowWeight
     this.sunLight.intensity = 3 * (1 - shadowWeight)
     if (shadowWeight > 0) {
-      const direction = this.camera.getWorldDirection(new THREE.Vector3())
-      const ground = this.hitGround(new THREE.Ray(this.camera.position.clone(), direction))
-        ?? this.camera.position.clone().normalize().multiplyScalar(radiusAu(this.selected))
-      const extent = THREE.MathUtils.clamp(this.camera.position.distanceTo(ground) * .8, 500 / 149_597_870_700, 50000 / 149_597_870_700)
+      const inward = selectedBody.position.clone().sub(this.camera.position).normalize()
+      const ground = this.hitGround(new THREE.Ray(this.camera.position.clone(), inward))
+        ?? this.camera.position.clone().addScaledVector(inward, Math.max(100, this.lastAltitudeMeters) / 149_597_870_700)
       const sunlight = this.sunLight.position.clone().sub(selectedBody.position).normalize()
-      this.terrainSun.target.position.copy(ground)
-      this.terrainSun.position.copy(ground).addScaledVector(sunlight, extent * 3)
-      const shadow = this.terrainSun.shadow.camera
-      shadow.left = shadow.bottom = -extent; shadow.right = shadow.top = extent
-      shadow.near = extent * .01; shadow.far = extent * 8; shadow.updateProjectionMatrix()
+      fitTerrainShadow(this.terrainSun, this.camera, ground, sunlight, this.lastAltitudeMeters)
     }
     this.renderer.render(this.scene, this.camera)
     const regionalStatus = [...this.regional].map(([id, layer]) => [id, layer.metrics()] as const)
@@ -530,6 +549,8 @@ export class ExplorerScene {
     this.controls.dispose()
     this.regional.forEach(layer => layer.dispose())
     Object.values(this.surfaces).forEach(s => s.classification.value?.dispose())
+    Object.values(this.surfaces).forEach(s => s.detailMap.value?.dispose())
+    Object.values(this.surfaces).forEach(s => s.mediumDetailMap.value?.dispose())
     this.surfaceTiles.dispose()
     this.terrain.forEach(layer => layer.dispose())
     this.scene.traverse(object => {

@@ -36,7 +36,11 @@ export function captureTerrainEdge(geometry: THREE.BufferGeometry, size = 65): T
  * owner. Coarse-to-fine processing also resolves multi-patch corner junctions.
  * No measured interior samples are smoothed or clipped. */
 export function stitchTerrainEdges(patches: EdgePatch[], fallback?: TerrainSurfaceSampler) {
-  const ordered = [...patches].sort((a, b) => a.level - b.level || a.key.localeCompare(b.key))
+  // Adaptive grids can have different spacing even at the same tile level.
+  // The coarser polyline must own the edge; it cannot follow extra vertices
+  // from a dense neighbor without leaving gaps between its own vertices.
+  const density = (patch: EdgePatch) => patch.level + Math.log2(patch.edge.size - 1)
+  const ordered = [...patches].sort((a, b) => density(a) - density(b) || a.key.localeCompare(b.key))
   const eps = 1e-9, point = new THREE.Vector3(), normal = new THREE.Vector3()
   for (const patch of ordered) {
     const p = patch.geometry.getAttribute('position'), n = patch.geometry.getAttribute('normal')

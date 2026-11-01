@@ -15,14 +15,20 @@ try {
   await route.fulfill({response,body:(await response.text()).replace('pilotMetrics() {','pilotMetrics() { window.__lodScene=this;')})
  })
  page.on('pageerror',e=>report.errors.push(e.message))
+ page.on('console',m=>{if(m.type()==='error'&&/THREE|shader|WebGLProgram/.test(m.text()))report.errors.push(m.text())})
  await page.goto(option('--url','http://127.0.0.1:5174')+'/?terrainPilot=1')
  await page.waitForFunction(()=>window.terrainPilot)
  report.renderer=await page.evaluate(()=>{const gl=document.querySelector('canvas').getContext('webgl2'),ext=gl.getExtension('WEBGL_debug_renderer_info');return ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER)})
  await page.getByRole('button',{name:'Close information panel',exact:true}).click()
  await page.evaluate(()=>{terrainPilot.metrics();__lodScene.setTerrainShadows(false);terrainPilot.date('2026-10-26T12:00:00Z')})
- for(const[name,lat,lon,altitude]of [['hadley-close',26.13,3.63,100],['tycho-close',-43.31,-11.36,100]]){
+ for(const[name,lat,lon,altitude,tilt]of [['hadley-close',26.13,3.63,100,0],['tycho-close',-43.31,-11.36,100,0],['boundary-tilted',26.015625,3.515625,100,75]]){
   console.log('Checking',name)
   await page.evaluate(({lat,lon,altitude})=>terrainPilot.location('moon',lat,lon,altitude),{lat,lon,altitude})
+  if(tilt)await page.evaluate(tilt=>{
+   const s=__lodScene,normal=s.camera.position.clone().normalize(),tangent=normal.clone().cross(s.camera.up).normalize(),angle=tilt*Math.PI/180
+   const forward=normal.multiplyScalar(-Math.cos(angle)).addScaledVector(tangent,Math.sin(angle))
+   s.camera.lookAt(s.camera.position.clone().addScaledVector(forward,1e-6))
+  },tilt)
   let stable=0,last=''
   for(let i=0;i<180;i++){
    const value=await page.evaluate(()=>{const g=__lodScene.terrain.get('moon');return{signature:g.surfaceSignature(),m:g.metrics()}})
@@ -39,12 +45,27 @@ try {
   }
   assert.equal(new Set(samples.map(s=>s.wanted)).size,1,'requested LOD changed while stationary')
   assert.equal(new Set(samples.map(s=>s.drawn)).size,1,'displayed LOD changed while stationary')
-  for(const sample of samples){assert.ok(sample.m.memoryBytes<=128*1048576);assert.ok(sample.m.triangles<=400000);assert.equal(sample.m.requests,0);assert.equal(sample.m.failed,0)}
+  for(const sample of samples){assert.ok(sample.m.memoryBytes<=128*1048576);assert.ok(sample.m.triangles<=400000);assert.equal(sample.m.maxLevel,8,'close terrain must reach native measured resolution');assert.equal(sample.m.requests,0);assert.equal(sample.m.failed,0)}
   const spread=Math.max(...samples.flatMap(s=>s.camera.map((v,i)=>Math.abs(v-samples[0].camera[i]))))
   assert.ok(spread<1e-12,'camera moved during stability check')
   assert.ok(samples.every(s=>s.rotation.every((v,i)=>Math.abs(v-samples[0].rotation[i])<1e-12)),'camera rotated during stability check')
+  const nearby=await page.evaluate(async()=>{
+   const THREE=await import('/node_modules/three/build/three.module.js')
+   const {firstTerrainSurfaceHit}=await import('/src/terrainSurface.ts')
+   const s=__lodScene,g=s.terrain.get('moon'),nodes=[...g.nodes.values()].filter(n=>n.mesh?.visible),points=[]
+   for(const x of [-.8,-.4,0,.4,.8])for(const y of [-.8,-.4,0,.4,.8]){
+    const ray=new THREE.Raycaster();ray.setFromCamera(new THREE.Vector2(x,y),s.camera)
+    const hit=firstTerrainSurfaceHit(ray,nodes.map(n=>n.mesh))
+    if(!hit||hit.distance*149597870700>1000)continue
+    const node=nodes.find(n=>n.mesh===hit.object)
+    points.push({key:node.key,level:node.address.z,size:g.nodeSize(node),distanceMeters:hit.distance*149597870700})
+   }
+   return points
+  })
+  assert.ok(nearby.length>0,'no nearby terrain was sampled')
+  for(const point of nearby){assert.equal(point.level,8,`coarse nearby tile ${point.key}`);assert.equal(point.size,129,`coarse nearby grid ${point.key}`)}
   await page.screenshot({path:resolve(output,name+'.png')})
-  report.cases.push({name,samples,cameraSpread:spread});console.log(name,samples[0].m)
+  report.cases.push({name,samples,nearby,cameraSpread:spread});console.log(name,samples[0].m)
  }
  assert.deepEqual(report.errors,[])
  report.completed=true

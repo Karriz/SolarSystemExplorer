@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { configureTerrainShadowFade } from './terrainShadows.ts'
 import { mercatorBounds, tileKey } from './terrainPilot.ts'
 import type { TileAddress, TileBounds } from './surfaceTiles.ts'
 
@@ -172,4 +173,5 @@ export function configureEarthColor(material: THREE.MeshStandardMaterial, active
       #endif`)
   }
   material.customProgramCacheKey = () => 'earth-rgb-local-mercator-v2'
+  configureTerrainShadowFade(material)
 }

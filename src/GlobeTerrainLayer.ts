@@ -8,21 +8,19 @@ import { tileBoundingSphere } from './GlobeTileLayer.ts'
 import type { TileAddress } from './surfaceTiles.ts'
 import { TerrainDecoder } from './TerrainDecoder.ts'
 import { TerrainImagery } from './TerrainImagery.ts'
-import { MoonWacGlobal } from './MoonWacGlobal.ts'
-import { deriveSyntheticHeights, LUNAR_DETAIL_CUMULATIVE, LUNAR_DETAIL_LEVELS } from './lunarDetail.ts'
 import { bodyInfo } from './ephemeris.ts'
-import { configureSurfaceMaterial, configureTerrainDepth, type SurfaceState } from './surfaceMaterial.ts'
+import type { SurfaceState } from './surfaceMaterial.ts'
+import { configureMoonSurfaceMaterial, configureMoonTerrainDepth, type MoonShade } from './moonSurfaceMaterial.ts'
 
 const MAX_REQUESTS = 4
 const MAX_BYTES = 48 * 1024 * 1024
 const MAX_LEAVES = 48
 const RETRY_MS = 30_000
-/** Low-poly lunar style: refine until a mesh facet covers about this many
- * pixels. Below that scale the surface reads as flat-shaded facet geometry. */
-const MOON_FACET_PIXELS = 2
+/** Low-poly lunar style: refine until a mesh facet covers about this many pixels. */
+const MOON_FACET_PIXELS = 1
 export type TerrainStatus = { body: TerrainBody; state: 'loading' | 'ready' | 'unavailable' | 'off'; loadedTiles: number; failedTiles: number; source?: { resolution: number; credit: string; url: string; gaps: boolean; approximate: boolean } }
 type Node = { key: string; info: TerrainTileInfo; address: TileAddress; sphere: THREE.Sphere; box?: THREE.Box3; lastUsed: number; retryAt: number;
-  bytes: number; request?: AbortController; heights?: Float32Array; mesh?: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>; edge?: TerrainEdge }
+  bytes: number; samples?: number; request?: AbortController; heights?: Float32Array; mesh?: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>; edge?: TerrainEdge }
 type Decoder = Pick<TerrainDecoder, 'decode' | 'dispose'>
 
 /** Versioned geographic terrain with region-paged metadata and independent imagery. */
@@ -43,8 +41,7 @@ export class GlobeTerrainLayer {
   /** Deep low-poly refinement chains retain one sibling set per level, so
    * the Moon needs more concurrent leaves; triangles and bytes stay capped. */
   private readonly maxLeaves: number
-  /** The measured-plus-synthetic chain at close range keeps every fallback
-   * ancestor resident; the 48 MiB baseline is sized for shallower trees. */
+  /** Keep measured close-range fallbacks resident while new terrain streams. */
   private readonly maxBytes: number
   private bytes = 0
   private groundNode?: Node
@@ -57,7 +54,6 @@ export class GlobeTerrainLayer {
   private radiusMeters: number
   private bodyId: TerrainBody
   private imagery: TerrainImagery
-  private wacGlobal?: MoonWacGlobal
   private pages = new Map<string, { keys: string[]; lastUsed: number; retryAt: number; request?: AbortController }>()
   private pageRequests = 0
   private sampleBase: TerrainSurfaceSampler
@@ -66,6 +62,7 @@ export class GlobeTerrainLayer {
   private baseUrl: string
   private createDecoder: () => Decoder
   private surface?: SurfaceState
+  private moonShade?: MoonShade
 
   constructor(body: THREE.Mesh, onStatus: (status: TerrainStatus) => void,
     baseUrl: string, createDecoder: () => Decoder = () => new TerrainDecoder(), bodyId: TerrainBody = 'moon', surface?: SurfaceState) {
@@ -79,8 +76,6 @@ export class GlobeTerrainLayer {
     this.createDecoder = createDecoder
     this.baseMaterial = body.material as THREE.MeshStandardMaterial
     this.material = this.baseMaterial.clone()
-    // The lunar surface renders flat-shaded facets; other bodies stay smooth.
-    if (bodyId === 'moon') this.material.flatShading = true
     this.maxLeaves = bodyId === 'moon' ? 96 : MAX_LEAVES
     this.maxBytes = bodyId === 'moon' ? 128 * 1024 * 1024 : MAX_BYTES
     this.radiusMeters = bodyInfo[bodyId].radiusKm * 1000
@@ -95,13 +90,17 @@ export class GlobeTerrainLayer {
       shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb = mix(vec3(0.22), diffuseColor.rgb, step(0.999, vTerrainCoverage));')
     }
     this.material.customProgramCacheKey = () => 'terrain-coverage-v1'
-    if (surface) configureSurfaceMaterial(this.material, surface, this.radiusMeters, 1, true)
-    if (surface && bodyId === 'moon') { this.wacGlobal = new MoonWacGlobal(new URL('moon/wac643-304ppd-v1/', baseUrl).href); this.wacGlobal.configure(this.material) }
+    if (surface && bodyId === 'moon') this.moonShade = configureMoonSurfaceMaterial(this.material, surface, this.radiusMeters, true)
     this.report()
     void this.loadManifest()
   }
 
-  async setWacPilot(enabled: boolean) { this.wacGlobal?.setEnabled(enabled) }
+  /** Camera in tile-local unit-sphere space, so facet tint follows the final view. */
+  updateShadeCamera(camera: THREE.Camera) {
+    if (!this.moonShade) return
+    this.body.updateWorldMatrix(true, true)
+    this.moonShade.camera.value.copy(this.body.worldToLocal(camera.position.clone())).divideScalar(this.group.scale.x)
+  }
 
   private async loadManifest() {
     const timeout = setTimeout(() => this.metadataRequest.abort(), 15_000)
@@ -137,7 +136,6 @@ export class GlobeTerrainLayer {
       for (const node of this.nodes.values()) node.request?.abort()
       for (const page of this.pages.values()) page.request?.abort()
       this.imagery.update([], performance.now())
-      this.wacGlobal?.clear()
     }
     this.report()
   }
@@ -159,7 +157,7 @@ export class GlobeTerrainLayer {
         return lon >= b.west - 1e-9 && lon <= b.east + 1e-9 && lat >= b.south - 1e-9 && lat <= b.north + 1e-9
       }).sort((a,b) => Number(!!b.mesh?.visible) - Number(!!a.mesh?.visible) || b.address.z - a.address.z)
       const point = new THREE.Vector3(), normal = new THREE.Vector3()
-      for (const node of candidates) if (this.sampleCell(node.mesh!.geometry, terrainBounds(node.address), this.meshSize(node.address), lat, lon, point, normal)) {
+      for (const node of candidates) if (this.sampleCell(node.mesh!.geometry, terrainBounds(node.address), this.nodeSize(node), lat, lon, point, normal)) {
         this.groundNode = node; node.lastUsed = performance.now()
         return point.length() * radius
       }
@@ -186,7 +184,7 @@ export class GlobeTerrainLayer {
   sampleSurface = (lat: number, lon: number, point: THREE.Vector3, normal: THREE.Vector3) => {
     if (!this.active) return this.sampleBase(lat, lon, point, normal)
     for (const node of this.nodes.values()) if (node.mesh?.visible
-      && this.sampleCell(node.mesh.geometry, terrainBounds(node.address), this.meshSize(node.address), lat, lon, point, normal)) return true
+      && this.sampleCell(node.mesh.geometry, terrainBounds(node.address), this.nodeSize(node), lat, lon, point, normal)) return true
     return false
   }
 
@@ -200,7 +198,7 @@ export class GlobeTerrainLayer {
       if (node.mesh && node.heights) {
         node.mesh.geometry.dispose()
         node.mesh.geometry = this.geometry(node)
-        node.edge = captureTerrainEdge(node.mesh.geometry, this.meshSize(node.address))
+        node.edge = captureTerrainEdge(node.mesh.geometry, this.nodeSize(node))
       }
     }
     this.stitchedSignature = ''
@@ -233,7 +231,6 @@ export class GlobeTerrainLayer {
       for (const node of this.nodes.values()) node.request?.abort()
       for (const page of this.pages.values()) page.request?.abort()
       this.imagery.update([], now)
-      this.wacGlobal?.clear()
       if (!selected) {
         for (const node of this.nodes.values()) if (!node.request) { this.release(node); this.nodes.delete(node.key) }
         this.imagery.clear()
@@ -251,12 +248,11 @@ export class GlobeTerrainLayer {
       this.setActive(false)
       for (const node of this.nodes.values()) node.request?.abort()
       this.imagery.update([], now)
-      this.wacGlobal?.clear()
       return
     }
     const frustum = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4()
       .multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).multiply(this.group.matrixWorld))
-    const score = (node: Node) => {
+    const calculateScore = (node: Node) => {
       if (!(node.box ? frustum.intersectsBox(node.box) : frustum.intersectsSphere(node.sphere))) return 0
       if (localCamera.dot(node.sphere.center) + distance * node.sphere.radius < .96) return 0
       const bounds = terrainBounds(node.address)
@@ -267,7 +263,10 @@ export class GlobeTerrainLayer {
         THREE.MathUtils.clamp(latitude, bounds.south, bounds.north),
         THREE.MathUtils.clamp(longitude + offset, bounds.west, bounds.east)))
         .sort((a, b) => localCamera.distanceToSquared(a) - localCamera.distanceToSquared(b))[0]
-      const height = (node.info.min + node.info.max) / 2
+      // A tile's mean elevation can sit kilometres below the camera's actual
+      // ground. Use the closest possible height in that envelope so
+      // nearby tiles cannot lose priority to farther tiles with a lucky mean.
+      const height = THREE.MathUtils.clamp((distance - 1) * this.radiusMeters / this.exaggeration, node.info.min, node.info.max)
       closest.multiplyScalar(1+(Number.isFinite(height)?height*this.exaggeration/this.radiusMeters:0))
       const nearest = Math.max(100/this.radiusMeters,localCamera.distanceTo(closest))
       const density = (this.manifest!.sampleSize-1)/(this.meshSize(node.address)-1)
@@ -277,11 +276,28 @@ export class GlobeTerrainLayer {
         : focal * bounds.span * Math.PI / 180 / nearest / 256 * 2 / 1.35
       // The Moon refines to a target projected facet size rather than
       // subpixel measured error: close-range believability comes from
-      // bounded procedural synthesis, not from finer measured meshes.
+      // material detail, not additional sub-resolution mesh levels.
       const facetError = focal * bounds.span * Math.PI / 180 / (this.meshSize(node.address) - 1) / nearest / MOON_FACET_PIXELS
       return this.bodyId === 'moon' ? facetError : Math.max(geometryError, imageryError)
     }
+    const scores = new Map<Node, number>()
+    const score = (node: Node) => {
+      let value = scores.get(node)
+      if (value === undefined) { value = calculateScore(node); scores.set(node, value) }
+      return value
+    }
     const want = (node: Node) => { this.wanted.add(node.key); node.lastUsed = now }
+    // Coverage siblings outside the view need geometry, but not the density
+    // reserved for visible detail. Use the same immutable bounds as selection;
+    // residency and the previous mesh density must not affect this decision.
+    const samples = (node: Node) => {
+      const size = this.meshSize(node.address)
+      if (this.manifest!.sampleSize !== 129) return size
+      // Distant tiles in a tilted view should not cost the same as the ground
+      // at the camera's feet. Spend full density where facets are largest on
+      // screen, retaining measured source heights for later local rebuilds.
+      return Math.min(size, score(node) > 16 ? 129 : score(node) > 8 ? 65 : 33)
+    }
     const roots = [0, 1].map(x => this.getNode({ z: 0, x, y: 0 }))
     const leaves = roots.map(node => ({ node, score: score(node) }))
     roots.forEach(want)
@@ -291,10 +307,8 @@ export class GlobeTerrainLayer {
       const next = leaves.find(item => item.score > (this.refined.has(item.node.key) ? 1.5 : 2.5) && item.node.address.z < this.detailMaxZoom())
       if (!next) break
       const addresses = terrainChildren(next.node.address)
-      const synthetic = next.node.address.z >= this.manifest!.maxZoom
-      if (synthetic ? !next.node.heights
-        : !addresses.every(a => this.nodes.has(this.key(a)) || this.manifest!.tiles[this.key(a)])) {
-        if (!synthetic) this.ensurePage(next.node.address, now)
+      if (!addresses.length || !addresses.every(a => this.nodes.has(this.key(a)) || this.manifest!.tiles[this.key(a)])) {
+        if (addresses.length) this.ensurePage(next.node.address, now)
         next.score = 0
         continue
       }
@@ -306,9 +320,19 @@ export class GlobeTerrainLayer {
         .filter(item => item.score > 0)
       if (!children.length) { next.score = 0; continue }
       if (this.manifest.sampleSize === 129) {
-        const triangles = leaves.reduce((sum,item) => sum+meshTriangles(this.meshSize(item.node.address)),0)
-        if (triangles-meshTriangles(this.meshSize(next.node.address))
-          +children.reduce((sum,item) => sum+meshTriangles(this.meshSize(item.node.address)),0)>400000) { next.score=0; continue }
+        // Every selected sibling is drawn, including ones outside the view.
+        const covering = new Set(this.wanted)
+        siblings.forEach(node => covering.add(node.key))
+        const cost = (node: Node): number => {
+          const own = meshTriangles(samples(node))
+          const keys = terrainChildren(node.address).map(address => this.key(address))
+          if (!keys.length || !keys.every(key => covering.has(key))) return own
+          // A dense parent can be more expensive than distant coarse children.
+          // Reserve the larger cost until the whole replacement can be drawn.
+          return Math.max(own, keys.reduce((sum, key) => sum + cost(this.nodes.get(key)!), 0))
+        }
+        const triangles = roots.reduce((sum, root) => sum + cost(root), 0)
+        if (triangles > 400000) { next.score = 0; continue }
       }
       refining.add(next.node.key)
       leaves.splice(leaves.indexOf(next), 1, ...children)
@@ -318,11 +342,33 @@ export class GlobeTerrainLayer {
     for (const node of this.nodes.values()) {
       if (node.mesh) node.mesh.visible = false
       if (!this.wanted.has(node.key)) node.request?.abort()
+      else {
+        const size = samples(node)
+        if (size !== this.nodeSize(node)) {
+          node.samples = size
+          if (node.mesh && node.heights) {
+            const before = this.geometryBytes(node.mesh.geometry)
+            node.mesh.geometry.dispose()
+            node.mesh.geometry = this.geometry(node)
+            node.edge = captureTerrainEdge(node.mesh.geometry, size)
+            const delta = this.geometryBytes(node.mesh.geometry) - before
+            this.bytes += delta
+            node.bytes += delta
+          }
+        }
+      }
     }
+    const unused = [...this.nodes.values()].filter(n => n !== this.groundNode && n.mesh && !this.wanted.has(n.key))
+      .sort((a, b) => a.lastUsed - b.lastUsed)
+    while (this.bytes > this.maxBytes && unused.length) this.release(unused.shift()!)
     const show = (node: Node) => {
-      if (score(node) === 0) return
+      // score() still keeps the far side out of the refinement budget. Drawing
+      // must keep every selected tile: a parent is already hidden once its
+      // children exist, and the base globe is off, so a tile hidden for being
+      // outside the view leaves a hole until the next pass.
       const children = node.address.z < this.detailMaxZoom()
-        ? terrainChildren(node.address).map(address => this.nodes.get(this.key(address)))
+        ? terrainChildren(node.address)
+          .map(address => this.nodes.get(this.key(address)))
           .filter((child): child is Node => !!child && this.wanted.has(child.key)) : []
       if (children.length && children.every(child => child.mesh)) {
         children.forEach(show)
@@ -336,7 +382,6 @@ export class GlobeTerrainLayer {
         bounds: terrainBounds(n.address), origin: new THREE.Vector3(), geometry: n.mesh!.geometry, edge: n.edge! })))
       this.stitchedSignature = signature
     }
-    this.wacGlobal?.update(visible.map(n => n.address), now)
     this.imagery.update(this.bodyId === 'moon' ? [] : visible.map(n => n.address), now)
     for (const node of this.nodes.values()) if (node.mesh) {
       const map = (this.bodyId === 'moon' ? undefined : this.imagery.texture(node.address)) ?? this.baseMaterial.map
@@ -354,7 +399,10 @@ export class GlobeTerrainLayer {
     this.pump(now)
     this.trimPages(now)
     for (const [key, node] of this.nodes) if (!this.wanted.has(key) && !node.mesh && !node.request
-      && now - node.lastUsed > RETRY_MS) this.nodes.delete(key)
+      && now - node.lastUsed > RETRY_MS) {
+      this.bytes -= node.bytes
+      this.nodes.delete(key)
+    }
     this.report()
   }
 
@@ -413,34 +461,8 @@ export class GlobeTerrainLayer {
 
   private key(address: TileAddress) { return `${address.z}/${address.x}/${address.y}` }
 
-  /** Synthetic sub-resolution levels extend the measured pyramid for the
-   * Moon when procedural surface detail is enabled. */
-  private detailLevels() {
-    return this.bodyId === 'moon' && this.manifest?.sampleSize === 129 && (this.surface?.detail.value ?? 1) > 0 ? LUNAR_DETAIL_LEVELS : 0
-  }
-  private detailMaxZoom() { return this.manifest!.maxZoom + this.detailLevels() }
-
-  private tileInfo(address: TileAddress): TerrainTileInfo {
-    const m = this.manifest!
-    if (address.z <= m.maxZoom) return m.tiles[this.key(address)]
-    let a = address
-    while (a.z > m.maxZoom) a = { z: a.z - 1, x: a.x >> 1, y: a.y >> 1 }
-    const info = m.tiles[this.key(a)]
-    const amp = LUNAR_DETAIL_CUMULATIVE[address.z - m.maxZoom - 1]
-    return { ...info, min: info.min - amp, max: info.max + amp }
-  }
-
-  /** Measured heights at or below the pyramid, or a derived synthetic grid.
-   * Derived grids reproduce exactly wherever their parents come from, so
-   * a transient derivation equals the stored one. */
-  private syntheticGrid(address: TileAddress): Float32Array | null {
-    const m = this.manifest!
-    if (address.z <= m.maxZoom) return this.nodes.get(this.key(address))?.heights ?? null
-    const parent = this.syntheticGrid({ z: address.z - 1, x: address.x >> 1, y: address.y >> 1 })
-    if (!parent) return null
-    return deriveSyntheticHeights(parent, m.sampleSize, terrainBounds({ z: address.z - 1, x: address.x >> 1, y: address.y >> 1 }),
-      terrainBounds(address), m.sampleSize, address.z - m.maxZoom, m.referenceRadiusMeters)
-  }
+  /** Material detail never adds geometry below the measured source resolution. */
+  private detailMaxZoom() { return this.manifest!.maxZoom }
 
   private getNode(address: TileAddress): Node {
     const key = this.key(address)
@@ -449,15 +471,32 @@ export class GlobeTerrainLayer {
       const sphere = tileBoundingSphere(terrainBounds(address))
       // Includes the full allowed displacement, including the 4x preview.
       sphere.radius += Math.max(Math.abs(this.manifest!.minHeightMeters), this.manifest!.maxHeightMeters) * 4 / this.radiusMeters
-      node = { key, info: this.tileInfo(address), address, sphere, lastUsed: this.lastUpdate, retryAt: 0, bytes: 0 }
+      node = { key, info: this.manifest!.tiles[key], address, sphere, lastUsed: this.lastUpdate, retryAt: 0, bytes: 0 }
       node.box = this.surfaceBox(node)
       this.nodes.set(key, node)
     }
     return node
   }
 
+  private moonDepthMaterial() {
+    const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })
+    configureMoonTerrainDepth(depth, this.surface!, this.radiusMeters, true)
+    return depth
+  }
+
   private meshSize(address: TileAddress) {
-    return this.manifest!.sampleSize === 129 && address.z < this.manifest!.maxZoom ? 65 : this.manifest!.sampleSize
+    const manifest = this.manifest!
+    if (manifest.sampleSize !== 129) return manifest.sampleSize
+    // Coarse coverage stays small; the native measured and procedural grids
+    // retain their full source density when they intersect the view.
+    if (address.z < manifest.maxZoom - 1) return 33
+    if (address.z < manifest.maxZoom) return 65
+    return 129
+  }
+  private nodeSize(node: Node) { return node.samples ?? this.meshSize(node.address) }
+  private geometryBytes(geometry: THREE.BufferGeometry) {
+    return Object.values(geometry.attributes).reduce((sum, a) => sum + a.array.byteLength * 2, 0)
+      + (geometry.index?.array.byteLength ?? 0) * 2
   }
   private surfaceBox(node: Node) {
     // Selection must not change when a tile is decoded or evicted. Bound the
@@ -473,20 +512,21 @@ export class GlobeTerrainLayer {
     return box.expandByScalar(1e-7)
   }
   private geometry(node: Node) {
-    const size=this.meshSize(node.address)
+    const size=this.nodeSize(node)
     return terrainGeometry(terrainBounds(node.address),heightGrid(node.heights!,this.manifest!.sampleSize,size),size,
       this.manifest!.referenceRadiusMeters,this.radiusMeters,this.exaggeration)
   }
 
   private pump(now: number) {
     if (this.disposed || !this.enabled || !this.manifest) return
-    const pending = [...this.wanted].map(key => this.nodes.get(key)!)
+    const pending = [...this.wanted].map(key => this.nodes.get(key)!).filter(node => !!node)
       .filter(node => !node.mesh && !node.request && node.retryAt <= now)
       .sort((a, b) => a.address.z - b.address.z)
     for (const node of pending) {
       if (this.requests >= MAX_REQUESTS) break
+      if (node.mesh || node.request || node.retryAt > now) continue
       // Reserve a conservative CPU+GPU allocation before asynchronous decoding.
-      const reserve = (this.meshSize(node.address) === 129 ? 3 : 1) * 1024 * 1024
+      const reserve = (this.nodeSize(node) === 129 ? 3 : 1) * 1024 * 1024
       const unused = [...this.nodes.values()].filter(n => n !== this.groundNode && n.mesh && !this.wanted.has(n.key))
         .sort((a, b) => a.lastUsed - b.lastUsed)
       while (this.bytes + reserve > this.maxBytes && unused.length) this.release(unused.shift()!)
@@ -500,45 +540,34 @@ export class GlobeTerrainLayer {
   }
 
   private async load(node: Node, request: AbortController) {
-    const synthetic = node.address.z > this.manifest!.maxZoom
-    const timeout = synthetic ? undefined : setTimeout(() => { node.retryAt = performance.now() + RETRY_MS; request.abort() }, 15_000)
+    const timeout = setTimeout(() => { node.retryAt = performance.now() + RETRY_MS; request.abort() }, 15_000)
     try {
-      let heights: Float32Array | null
-      if (synthetic) {
-        heights = this.syntheticGrid(node.address)
-        // The measured parent may still be streaming; retry shortly.
-        if (!heights) { node.retryAt = performance.now() + 500; return }
-      } else {
-        const url = new URL(this.manifest!.tileUrl.replace('{z}', String(node.address.z))
-          .replace('{x}', String(node.address.x)).replace('{y}', String(node.address.y)), this.manifestUrl)
-        const response = await fetch(url, { signal: request.signal })
-        if (!response.ok) throw new Error(`Terrain HTTP ${response.status}`)
-        const buffer = await response.arrayBuffer()
-        if (buffer.byteLength !== node.info.bytes) throw new Error('Terrain download size mismatch')
-        if (this.disposed || request.signal.aborted || !this.wanted.has(node.key)) return
-        heights = await (this.decoder ??= this.createDecoder()).decode(buffer, this.manifest!.sampleSize, node.info.sha256, this.manifest!.scaleMeters, this.manifest!.noData)
-      }
+      const url = new URL(this.manifest!.tileUrl.replace('{z}', String(node.address.z))
+        .replace('{x}', String(node.address.x)).replace('{y}', String(node.address.y)), this.manifestUrl)
+      const response = await fetch(url, { signal: request.signal })
+      if (!response.ok) throw new Error(`Terrain HTTP ${response.status}`)
+      const buffer = await response.arrayBuffer()
+      if (buffer.byteLength !== node.info.bytes) throw new Error('Terrain download size mismatch')
+      if (this.disposed || request.signal.aborted || !this.wanted.has(node.key)) return
+      const heights = await (this.decoder ??= this.createDecoder()).decode(buffer, this.manifest!.sampleSize, node.info.sha256, this.manifest!.scaleMeters, this.manifest!.noData)
       if (this.disposed || request.signal.aborted || !this.wanted.has(node.key) || !heights) return
       node.heights = heights
       node.mesh = new THREE.Mesh(this.geometry(node), this.material.clone())
-      node.edge = captureTerrainEdge(node.mesh.geometry, this.meshSize(node.address))
-      if (this.wacGlobal) node.mesh.onBeforeRender = () => this.wacGlobal?.bind(node.address)
+      node.edge = captureTerrainEdge(node.mesh.geometry, this.nodeSize(node))
       node.mesh.material.onBeforeCompile = this.material.onBeforeCompile
       node.mesh.material.customProgramCacheKey = this.material.customProgramCacheKey
       node.box = this.surfaceBox(node)
       node.mesh.name = `${this.bodyId}-terrain/${node.key}`
       node.mesh.visible = false
-      if (this.surface) {
-        const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })
-      node.mesh.customDepthMaterial = depth
-        configureTerrainDepth(depth, this.surface, this.radiusMeters, true)
-      }
+      // The coverage set is chosen explicitly. AU-scale bounding spheres are
+      // too small for a reliable extra frustum test.
+      node.mesh.frustumCulled = false
+      if (this.surface) node.mesh.customDepthMaterial = this.moonDepthMaterial()
       node.mesh.castShadow = true
       node.mesh.receiveShadow = true
       this.group.add(node.mesh)
       const geometry = node.mesh.geometry
-      const actual = heights.byteLength + Object.values(geometry.attributes).reduce((sum, a) => sum + a.array.byteLength * 2, 0)
-        + (geometry.index?.array.byteLength ?? 0) * 2
+      const actual = heights.byteLength + this.geometryBytes(geometry)
       this.bytes += actual - node.bytes
       node.bytes = actual
       node.retryAt = 0
@@ -570,11 +599,11 @@ export class GlobeTerrainLayer {
     const visible = [...this.nodes.values()].filter(n => n.mesh?.visible && this.active)
     return { ready: this.active, visible: visible.length, cached: [...this.nodes.values()].filter(n => n.mesh).length,
       requests: this.requests + this.pageRequests, memoryBytes: this.bytes, sampleSize: this.manifest?.sampleSize ?? 0,
-      grids: Object.fromEntries([65,129].map(size=>[size,visible.filter(n=>this.meshSize(n.address)===size).length])),
+      grids: Object.fromEntries([33,65,129].map(size=>[size,visible.filter(n=>this.nodeSize(n)===size).length])),
       maxLevel: visible.reduce((level,n) => Math.max(level,n.address.z),0),
       failed: [...this.nodes.values()].filter(n => n.retryAt > 0).length,
       triangles: visible.reduce((sum,n) => sum + n.mesh!.geometry.index!.count / 3,0),
-      triangleBudget: this.manifest?.sampleSize === 129 ? 400000 : 417792, imagery: this.imagery.metrics(), wac: this.wacGlobal?.metrics() }
+      triangleBudget: this.manifest?.sampleSize === 129 ? 400000 : 417792, imagery: this.imagery.metrics() }
   }
 
   private report() {
@@ -596,7 +625,6 @@ export class GlobeTerrainLayer {
     for (const node of this.nodes.values()) { node.request?.abort(); this.release(node) }
     for (const page of this.pages.values()) page.request?.abort()
     this.imagery.dispose()
-    this.wacGlobal?.dispose()
     this.decoder?.dispose()
     this.material.dispose()
     this.group.removeFromParent()

@@ -235,6 +235,20 @@ test('adaptive grids preserve additional close-range samples and cross-density b
   a.geometry.dispose();b.geometry.dispose()
 })
 
+test('coarse grids own equal-level seams even when the dense tile sorts first by key', () => {
+  const coarse = edgePatch('z-coarse', { z: 8, x: 260, y: 88 }, 300, 33)
+  const fine = edgePatch('a-fine', { z: 8, x: 261, y: 88 }, 1000, 129)
+  stitchTerrainEdges([fine, coarse])
+  for (let r = 0; r < 129; r++) {
+    const t = r / 4, p = coarse.geometry.attributes.position, q = fine.geometry.attributes.position
+    const expected = new THREE.Vector3().fromBufferAttribute(p, Math.floor(t) * 33 + 32)
+      .lerp(new THREE.Vector3().fromBufferAttribute(p, Math.ceil(t) * 33 + 32), t % 1).add(coarse.origin)
+    const actual = new THREE.Vector3().fromBufferAttribute(q, r * 129).add(fine.origin)
+    assert.ok(expected.distanceTo(actual) * 1737400 < .005, `unwelded mixed-grid row ${r}`)
+  }
+  coarse.geometry.dispose(); fine.geometry.dispose()
+})
+
 test('view-centered native roots wrap the date line and retain polar fallback',()=>{
   for(const [lon,lat]of [[25,60.38],[8.02,46.57],[179.99,0],[-179.99,0],[0,-80]]){
     const roots=earthViewRoots(lon,lat)
