@@ -4,7 +4,7 @@ import * as THREE from 'three'
 import { readFileSync } from 'node:fs'
 import { inflateSync } from 'node:zlib'
 import { surfaceState } from '../src/surfaceMaterial.ts'
-import { configureMoonSurfaceMaterial, configureMoonTerrainDepth, moonColorSharpenWeight } from '../src/moonSurfaceMaterial.ts'
+import { configureMoonSurfaceMaterial, configureMoonTerrainDepth, moonColorSharpenWeight, MARS_DETAIL_PROFILE } from '../src/moonSurfaceMaterial.ts'
 
 const chunks = () => ({
   uniforms: {},
@@ -23,7 +23,9 @@ test('moon material samples shared normal and roughness detail without procedura
   assert.equal(shader.uniforms.moonMetersPerUnit.value, 1_737_400)
   const program = shader.vertexShader + shader.fragmentShader
   assert.doesNotMatch(program, /149597870700|dFdx\(bump\)|dFdy\(bump\)/)
-  assert.match(shader.fragmentShader, /dFdx\(vMapUv\)/)
+  assert.match(shader.fragmentShader, /dFdx\(moonUv\)/)
+  assert.match(shader.fragmentShader, /textureGrad\(map, moonUv/)
+  assert.match(shader.fragmentShader, /moonUvDx.x -= round/)
   assert.match(shader.fragmentShader, /textureSize\(map, 0\)/)
   assert.match(shader.fragmentShader, /smoothstep\(1\.15, 2\.2, moonMagX\)/)
   assert.match(shader.fragmentShader, /smoothstep\(10\.0, 24\.0, moonMagX\)/)
@@ -40,8 +42,8 @@ test('moon material samples shared normal and roughness detail without procedura
   assert.equal(shader.uniforms.moonMediumReady,state.mediumDetailReady)
   assert.doesNotMatch(program,/moonNoise|moonHash|transformed\s*[+*=]/)
   assert.equal((shader.fragmentShader.match(/texture2D\(detailTexture/g)??[]).length,3)
-  assert.match(shader.fragmentShader,/moonSurfaceSample\(moonDetailMap/)
-  assert.match(shader.fragmentShader,/moonSurfaceSample\(moonMediumMap/)
+  assert.match(shader.fragmentShader,/moonSurfaceSample\(moonDetailMap, moonDirection \* \(27146\.875\)/)
+  assert.match(shader.fragmentShader,/moonSurfaceSample\(moonMediumMap, moonDirection \* \(6786\.71875\)/)
   assert.match(shader.fragmentShader,/vMoonFade > 0.001 && moonDetailReady > 0.5/)
   assert.match(shader.fragmentShader,/vMoonMediumFade > 0.001 && moonMediumReady > 0.5/)
   assert.match(shader.fragmentShader,/roughnessFactor = mix/)
@@ -49,6 +51,20 @@ test('moon material samples shared normal and roughness detail without procedura
   assert.match(shader.fragmentShader, /uniform int surfaceClipCount/)
   state.detail.value = 0
   assert.equal(shader.uniforms.moonDetail.value, 0)
+})
+
+test('mars detail profile scales triplanar sampling by the Martian radius and its texture repeats', () => {
+  const material = new THREE.MeshStandardMaterial()
+  const previousKey = material.customProgramCacheKey()
+  const state = surfaceState()
+  configureMoonSurfaceMaterial(material, state, 149_597_870_700, true, new THREE.Vector3(), { value: new THREE.Vector3() }, MARS_DETAIL_PROFILE)
+  const shader = chunks()
+  material.onBeforeCompile(shader, {})
+  assert.match(shader.fragmentShader, /moonSurfaceSample\(moonDetailMap, moonDirection \* \(26480\.46875\)/)
+  assert.match(shader.fragmentShader, /moonSurfaceSample\(moonMediumMap, moonDirection \* \(6620\.1171875\)/)
+  assert.doesNotMatch(shader.fragmentShader, /27146\.875|6786\.71875/)
+  assert.match(material.customProgramCacheKey(), new RegExp(`${previousKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/moon-normal-texture-v7/3389500/128/512/clip`))
+  assert.equal(shader.uniforms.moonDetail, state.detail)
 })
 
 test('moon depth keeps skirt discard without a derivative normal', () => {
@@ -95,7 +111,7 @@ test('moon color sharpen is active only while texels are mildly magnified', () =
   assert.equal(moonColorSharpenWeight(40), 0)
 })
 
-for(const file of ['moon-detail.png','moon-medium-detail.png'])test(`${file} contains valid unit normals and roughness data at fixed size`, () => {
+for(const file of ['moon-detail.png','moon-medium-detail.png','mars-detail.png','mars-medium-detail.png'])test(`${file} contains valid unit normals and roughness data at fixed size`, () => {
   const png=readFileSync(new URL(`../public/textures/${file}`,import.meta.url))
   assert.equal(png.readUInt32BE(16),512);assert.equal(png.readUInt32BE(20),512)
   assert.equal(png[24],8);assert.equal(png[25],6)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Trace appearance classes from moon.jpg; these are not geological units.
+"""Trace image-derived appearance classes; these are not geological units.
 
 Uses the existing terrain Python environment (numpy/rasterio). Shared edges
 retain exact pixel coordinates: removing collinear vertices is lossless and
@@ -47,12 +47,16 @@ def main():
     parser.add_argument('--min-region', type=int, default=12)
     parser.add_argument('--colors', type=int, nargs='+', default=[6, 10, 16])
     parser.add_argument('--contours', action='store_true', help='Also build shared diagonal/smooth 10-color contours')
+    parser.add_argument('--source', type=Path, default=Path('public/textures/moon.jpg'))
+    parser.add_argument('--source-label')
+    parser.add_argument('--labels-cache', type=Path, default=Path('.terrain-cache/moon-vector-labels-10.npz'))
+    parser.add_argument('--contour-cache', type=Path, default=Path('.terrain-cache/moon-contour-coverage.npz'))
     parser.add_argument('--output', type=Path, default=Path('public/moon-vectors'))
     args = parser.parse_args()
     width, height, tile = args.width, args.width // 2, args.tile_size
     if width % tile or height % tile:
         parser.error('width and half-width must be multiples of tile-size')
-    source = Path('public/textures/moon.jpg')
+    source = args.source
     with rasterio.open(source) as src:
         rgb = src.read(out_shape=(3, height, width), resampling=Resampling.average).transpose(1, 2, 0)
     pixels = rgb.reshape(-1, 3).astype(np.float32)
@@ -111,7 +115,7 @@ def main():
         check_x = sorted(set([0, width-1] + [v for x in range(tile, width, tile) for v in [x-1, x]]))
         check_y = sorted(set([0, height-1] + [v for y in range(tile, height, tile) for v in [y-1, y]]))
         check_samples = [[x, y, int(labels[y, x])] for x in check_x for y in check_y]
-        manifest = {'schema': 1, 'source': 'moon.jpg', 'sourceSha256': hashlib.sha256(source.read_bytes()).hexdigest(),
+        manifest = {'schema': 1, 'source': args.source_label or source.name, 'sourceSha256': hashlib.sha256(source.read_bytes()).hexdigest(),
                     'description': 'Image-derived appearance classes, not measured geology or new surface detail',
                     'width': width, 'height': height, 'tileSize': tile, 'palette': palette, 'tiles': entries,
                     'minRegionPixels': args.min_region, 'polygons': polygons, 'vertices': vertices, 'payloadBytes': payload,
@@ -122,8 +126,9 @@ def main():
         if count == 10 and args.contours:
             from moon_vector_contours import build_contours
             Path('.terrain-cache').mkdir(exist_ok=True)
-            np.savez_compressed('.terrain-cache/moon-vector-labels-10.npz', labels=labels)
-            build_contours(labels, palette, manifest, args.output)
+            args.labels_cache.parent.mkdir(parents=True, exist_ok=True)
+            np.savez_compressed(args.labels_cache, labels=labels)
+            build_contours(labels, palette, manifest, args.output, args.contour_cache)
 
 
 if __name__ == '__main__':

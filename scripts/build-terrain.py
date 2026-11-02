@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Build verified, paged static terrain releases from explicit planetary adapters."""
 import argparse
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from multiprocessing import get_context
 import errno
 import gzip
 import hashlib
@@ -80,15 +82,21 @@ class Raster:
             else:
                 dataset = rasterio.open(path)
                 projection = dataset.crs.to_dict()
-                if dataset.shape != (height, width) or dataset.count != 1 or projection.get("proj") != "eqc":
+                expected_projection = source.get("sourceProjection", "eqc")
+                if dataset.shape != (height, width) or dataset.count != 1 or projection.get("proj") != expected_projection:
                     raise ValueError("Unexpected source dimensions or projection")
-                if abs(projection.get("lon_0", 0) - (source["sourceWest"] + 180)) > 1e-6:
+                if expected_projection == "eqc" and abs(projection.get("lon_0", 0) - (source["sourceWest"] + 180)) > 1e-6:
                     raise ValueError("Unexpected source prime meridian")
                 if abs(projection.get("R", projection.get("a", 0)) - source["sourceRadiusMeters"]) > 1:
                     raise ValueError("Unexpected source reference radius")
                 if abs(dataset.scales[0] - source["sourceScale"]) > 1e-8 or dataset.offsets[0] != 0:
                     raise ValueError("Unexpected source scale/offset")
-                if abs(dataset.bounds.top / source["sourceRadiusMeters"] - math.pi / 2) > 1e-4:
+                if expected_projection == "longlat":
+                    step = source["sourcePixelDegrees"]
+                    expected = (step, 0, source["sourceWest"], 0, -step, 90)
+                    if any(abs(a-b) > 1e-9 for a, b in zip(tuple(dataset.transform)[:6], expected)):
+                        raise ValueError("Unexpected geographic source transform")
+                elif abs(dataset.bounds.top / source["sourceRadiusMeters"] - math.pi / 2) > 1e-4:
                     raise ValueError("Unexpected source geographic bounds")
             try:
                 for row in range(0, height, 128):
@@ -124,18 +132,38 @@ class Raster:
         # One physical pole, independent of longitude. Leave unobserved poles missing.
         self.poles = [float(np.nanmean(row)) if np.isfinite(row).any() else np.nan
                       for row in (self.data[0], self.data[-1])]
+        self.wrapped_edge_fill_pixels = 0
+        if source.get("wrapEdgeNoData"):
+            self.wrapped_edge_fill_pixels = int((~np.isfinite(self.data[:, -1])
+                & np.isfinite(self.data[:, -2]) & np.isfinite(self.data[:, 0])).sum())
 
     def sample(self, lons, lats):
         height, width = self.data.shape
-        x = ((lons - self.source["sourceWest"]) % 360) / 360 * width - .5
-        y = np.clip((90 - lats) / 180 * height - .5, 0, height - 1)
+        x_step = self.source.get("sourcePixelDegrees", 360 / width)
+        y_step = self.source.get("sourcePixelDegrees", 180 / height)
+        x = ((lons - self.source["sourceWest"]) % 360) / x_step - .5
+        y = np.clip((90 - lats) / y_step - .5, 0, height - 1)
         ix, iy = np.floor(x).astype(int), np.floor(y).astype(int)
         fx, fy = x - ix, y - iy
+        # The 200 m raster ends a fraction of a pixel short of +180 degrees.
+        # Interpolate its last/first pixel centers across that actual gap.
+        period = 360 / x_step
+        seam = (x < 0) | (x > width - 1)
+        seam_x = np.where(x < 0, x + period, x)
+        fx = np.where(seam, (seam_x - (width - 1)) / (period - (width - 1)), fx)
+        ix = np.where(seam, width - 1, ix)
         result = np.zeros(np.broadcast_shapes(x.shape, y.shape))
         valid_weight = np.zeros_like(result)
         for dx, dy, weight in ((0, 0, (1 - fx) * (1 - fy)), (1, 0, fx * (1 - fy)),
                                (0, 1, (1 - fx) * fy), (1, 1, fx * fy)):
-            values = self.data[np.minimum(iy + dy, height - 1), (ix + dx) % width]
+            rows, columns = np.minimum(iy + dy, height - 1), (ix + dx) % width
+            values = self.data[rows, columns]
+            if self.source.get("wrapEdgeNoData"):
+                edge = (columns == width - 1) & ~np.isfinite(values)
+                if edge.any():
+                    before, after = self.data[rows, width - 2], self.data[rows, 0]
+                    wrapped = before + (after - before) / (period - (width - 2))
+                    values = np.where(edge, wrapped, values)
             valid = np.isfinite(values)
             result += np.where(valid, values, 0) * weight
             valid_weight += valid * weight
@@ -143,6 +171,51 @@ class Raster:
         result = np.where(lats == 90, self.poles[0], result)
         result = np.where(lats == -90, self.poles[1], result)
         return result
+
+
+def build_column(job):
+    source, data_path, poles, staging, checkpoints, size, z, x = job
+    # Workers map the already-verified immutable numeric raster; they never
+    # download or normalize a source independently.
+    raster = Raster.__new__(Raster)
+    raster.source = source
+    raster.data = np.load(data_path, mmap_mode="r")
+    raster.poles = poles
+    cells, units = size - 1, source["scaleMeters"]
+    span = 180 / 2 ** z
+    chord = source["referenceRadiusMeters"] * (1 - math.cos(math.radians(span / cells) / math.sqrt(2)))
+    directory = staging / "tiles" / str(z) / str(x)
+    directory.mkdir(parents=True, exist_ok=True)
+    lons = -180 + x * span + np.arange(size)[None, :] / cells * span
+    checkpoint = checkpoints / str(z) / f"{x}.json"
+    previous = json.loads(checkpoint.read_text()) if checkpoint.exists() else {}
+    reusable = len(previous) == 2 ** z and all(
+        (directory / f"{y}.bin").is_file() and (directory / f"{y}.bin").stat().st_size == info["bytes"]
+        and file_hash(directory / f"{y}.bin") == info["sha256"] for y, info in previous.items())
+    if reusable:
+        return previous
+    column = {}
+    for y in range(2 ** z):
+        lats = 90 - y * span - np.arange(size)[:, None] / cells * span
+        heights = raster.sample(lons, lats)
+        valid = np.isfinite(heights)
+        quantized = np.rint(np.where(valid, heights, 0) / units)
+        if (quantized < -32767).any() or (quantized > 32767).any():
+            raise ValueError("Height exceeds tile encoding range")
+        values = quantized.astype("<i2")
+        values[~valid] = NODATA
+        decoded = np.where(valid, values.astype(float) * units, 0)
+        actual = raster.sample((lons[:, :-1] + lons[:, 1:]) / 2, (lats[:-1] + lats[1:]) / 2)
+        actual = np.nan_to_num(actual)
+        predicted = (decoded[:-1, :-1] + decoded[1:, :-1] + decoded[:-1, 1:] + decoded[1:, 1:]) / 4
+        error = float(np.max(np.abs(actual - predicted))) + chord + units
+        payload = gzip.compress(values.tobytes(), compresslevel=3, mtime=0)
+        (directory / f"{y}.bin").write_bytes(payload)
+        column[str(y)] = {"min": float(decoded.min()), "max": float(decoded.max()), "error": round(error, 2),
+                          "bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest()}
+    write_json(checkpoint, column)
+    return column
+
 
 
 def build(body, source, args):
@@ -153,6 +226,8 @@ def build(body, source, args):
     size = source.get("sampleSize", SIZE)
     cells = size - 1
     max_zoom = args.max_zoom if args.max_zoom is not None else source["maxZoom"]
+    if max_zoom > (9 if body == "mars" else 8):
+        raise ValueError("Unsupported terrain depth for this body")
     version = f"{source['product']}-{source['sha256'][:12]}-g{size}-z{max_zoom}-v3"
     if source.get("adapterRevision", 1) != 1:
         version += f"-r{source['adapterRevision']}"
@@ -162,6 +237,9 @@ def build(body, source, args):
         for key in ("frame", "verticalDatum", "referenceRadiusMeters", "scaleMeters", "sourceResolutionMeters", "credit", "sourceUrl"):
             if previous[key] != source[key]:
                 raise ValueError("Adapter metadata changed; bump adapterRevision before publishing")
+        for key in ("license", "licenseUrl", "sourceCitation", "coverageNotes", "sourceProjection", "sourcePixelDegrees", "wrapEdgeNoData"):
+            if key in source and previous.get(key) != source[key]:
+                raise ValueError("Adapter metadata changed; bump adapterRevision before publishing")
         print(f"Reusing immutable {body}/{version}", flush=True)
         return f"{body}/{version}/manifest.json"
     # Keep incomplete releases outside the web root and Vite's file watcher.
@@ -170,57 +248,26 @@ def build(body, source, args):
     checkpoints = args.cache / "checkpoints" / version
     index, pages, total_bytes = {}, {}, 0
     units = source["scaleMeters"]
-    for z in range(max_zoom + 1):
-        span = 180 / 2 ** z
-        chord = source["referenceRadiusMeters"] * (1 - math.cos(math.radians(span / cells) / math.sqrt(2)))
-        for x in range(2 ** (z + 1)):
-            directory = staging / "tiles" / str(z) / str(x)
-            directory.mkdir(parents=True, exist_ok=True)
-            lons = -180 + x * span + np.arange(size)[None, :] / cells * span
-            checkpoint = checkpoints / str(z) / f"{x}.json"
-            previous = json.loads(checkpoint.read_text()) if checkpoint.exists() else {}
-            reusable = len(previous) == 2 ** z and all(
-                (directory / f"{y}.bin").is_file() and (directory / f"{y}.bin").stat().st_size == info["bytes"]
-                and file_hash(directory / f"{y}.bin") == info["sha256"] for y, info in previous.items())
-            column = {}
-            for y in range(2 ** z):
-                key = f"{z}/{x}/{y}"
-                if reusable:
-                    info = previous[str(y)]
+    workers = getattr(args, "workers", 1)
+    executor_class = ProcessPoolExecutor if workers > 1 else ThreadPoolExecutor
+    options = {"mp_context": get_context("fork")} if workers > 1 else {}
+    with executor_class(max_workers=workers, **options) as executor:
+        for z in range(max_zoom + 1):
+            jobs = ((source, Path(raster.data.filename), raster.poles, staging, checkpoints, size, z, x)
+                    for x in range(2 ** (z + 1)))
+            columns = executor.map(build_column, jobs)
+            for x, column in enumerate(columns):
+                for y, info in column.items():
+                    key = f"{z}/{x}/{y}"
                     total_bytes += info["bytes"]
                     if z <= PAGE_ZOOM:
                         index[key] = info
                     else:
-                        page = f"{x // 2 ** (z - PAGE_ZOOM)}/{y // 2 ** (z - PAGE_ZOOM)}"
+                        page = f"{x // 2 ** (z - PAGE_ZOOM)}/{int(y) // 2 ** (z - PAGE_ZOOM)}"
                         pages.setdefault(page, {})[key] = info
-                    continue
-                lats = 90 - y * span - np.arange(size)[:, None] / cells * span
-                heights = raster.sample(lons, lats)
-                valid = np.isfinite(heights)
-                quantized = np.rint(np.where(valid, heights, 0) / units)
-                if (quantized < -32767).any() or (quantized > 32767).any():
-                    raise ValueError("Height exceeds tile encoding range")
-                values = quantized.astype("<i2")
-                values[~valid] = NODATA
-                decoded = np.where(valid, values.astype(float) * units, 0)
-                actual = raster.sample((lons[:, :-1] + lons[:, 1:]) / 2, (lats[:-1] + lats[1:]) / 2)
-                actual = np.nan_to_num(actual)
-                predicted = (decoded[:-1, :-1] + decoded[1:, :-1] + decoded[:-1, 1:] + decoded[1:, 1:]) / 4
-                error = float(np.max(np.abs(actual - predicted))) + chord + units
-                payload = gzip.compress(values.tobytes(), compresslevel=3, mtime=0)
-                (directory / f"{y}.bin").write_bytes(payload)
-                total_bytes += len(payload)
-                info = {"min": float(decoded.min()), "max": float(decoded.max()), "error": round(error, 2),
-                        "bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest()}
-                column[str(y)] = info
-                if z <= PAGE_ZOOM:
-                    index[key] = info
-                else:
-                    page = f"{x // 2 ** (z - PAGE_ZOOM)}/{y // 2 ** (z - PAGE_ZOOM)}"
-                    pages.setdefault(page, {})[key] = info
-            if not reusable:
-                write_json(checkpoint, column)
-        print(f"{body}: built level {z}, {total_bytes / 1e6:.1f} MB", flush=True)
+                if z >= 8 and (x + 1) % 64 == 0:
+                    print(f"{body}: level {z}, {x + 1}/{2 ** (z + 1)} columns", flush=True)
+            print(f"{body}: built level {z}, {total_bytes / 1e6:.1f} MB", flush=True)
     page_info = {}
     for key, tiles in pages.items():
         path = staging / "indices" / f"{key}.json"
@@ -230,8 +277,8 @@ def build(body, source, args):
         "maxZoom": max_zoom, "encoding": "gzip-int16-le", "scaleMeters": units, "offsetMeters": 0, "noData": NODATA,
         "longitude": "east-positive-minus180-to180", "rowOrder": "north-to-south",
         "minHeightMeters": min(0, raster.stats["min"] - units), "maxHeightMeters": max(0, raster.stats["max"] + units),
-        "missingPixels": raster.stats["missingPixels"], "gapRendering": "neutral reference sphere",
-        "errorMetric": "estimated-midpoint-plus-chord", "license": "Public domain; cite source authors",
+        "missingPixels": raster.stats["missingPixels"] - raster.wrapped_edge_fill_pixels, "gapRendering": "neutral reference sphere",
+        "errorMetric": "estimated-midpoint-plus-chord", "license": source.get("license", "Public domain; cite source authors"),
         "sourceSha256": source["sha256"], "tileUrl": "tiles/{z}/{x}/{y}.bin", "tiles": index,
         "indexPages": {"rootZoom": PAGE_ZOOM, "pages": page_info}, "tileBytes": total_bytes,
         **{key: source[key] for key in ("frame", "verticalDatum", "referenceRadiusMeters", "sourceResolutionMeters", "credit", "sourceUrl")}}
@@ -239,6 +286,13 @@ def build(body, source, args):
         manifest["sourceFiles"] = source["files"]
     if source.get("referenceSurfaceApproximation"):
         manifest["referenceSurfaceApproximation"] = True
+    if raster.wrapped_edge_fill_pixels:
+        manifest["sourceMissingPixels"] = raster.stats["missingPixels"]
+        manifest["wrappedEdgeFillPixels"] = raster.wrapped_edge_fill_pixels
+        manifest["edgeGapProcessing"] = "Interpolate only the missing final longitude column between adjacent measured pixels across the dateline; retain other NoData."
+    for key in ("licenseUrl", "sourceCitation", "coverageNotes", "sourceProjection", "sourcePixelDegrees", "wrapEdgeNoData"):
+        if key in source:
+            manifest[key] = source[key]
     write_json(staging / "manifest.json", manifest)
     subprocess.run([sys.executable, str(ROOT / "scripts/validate-terrain.py"), str(staging / "manifest.json")], check=True)
     release.parent.mkdir(parents=True, exist_ok=True)
@@ -261,10 +315,11 @@ def build(body, source, args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bodies", nargs="+", choices=SOURCES, default=list(SOURCES))
-    parser.add_argument("--max-zoom", type=int, choices=range(0, 9))
+    parser.add_argument("--max-zoom", type=int, choices=range(0, 10))
     parser.add_argument("--cache", type=Path, default=ROOT / ".terrain-cache")
     parser.add_argument("--output", type=Path, default=ROOT / "public/terrain")
     parser.add_argument("--offline", action="store_true")
+    parser.add_argument("--workers", type=int, choices=range(1, 33), default=1)
     args = parser.parse_args()
     args.cache.mkdir(parents=True, exist_ok=True)
     args.output.mkdir(parents=True, exist_ok=True)

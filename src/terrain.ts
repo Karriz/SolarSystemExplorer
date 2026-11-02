@@ -19,6 +19,7 @@ export type TerrainManifest = {
   frame: string; longitude: 'east-positive-minus180-to180'; rowOrder: 'north-to-south'
   minHeightMeters: number; maxHeightMeters: number; sourceResolutionMeters: number
   credit: string; sourceUrl: string; tileUrl: string; tiles: Record<string, TerrainTileInfo>
+  license?: string; licenseUrl?: string
   noData?: number; missingPixels?: number; verticalDatum?: string; referenceSurfaceApproximation?: boolean
   indexPages?: { rootZoom: number; pages: Record<string, TerrainIndexPage> }
 }
@@ -36,7 +37,7 @@ export function parseTerrainManifest(value: unknown): TerrainManifest {
     || m.referenceRadiusMeters !== adapters[m.body].radius || m.scaleMeters !== adapters[m.body].scale
     || m.frame !== adapters[m.body].frame || m.longitude !== 'east-positive-minus180-to180' || m.rowOrder !== 'north-to-south'
     || m.offsetMeters !== 0 || m.tileUrl !== 'tiles/{z}/{x}/{y}.bin'
-    || (m.sampleSize !== 65 && !(m.schema === 2 && m.body === 'moon' && m.sampleSize === 129)) || !Number.isInteger(m.maxZoom) || m.maxZoom < 0 || m.maxZoom > 8
+    || (m.sampleSize !== 65 && !(m.schema === 2 && (m.body === 'moon' || m.body === 'mars') && m.sampleSize === 129)) || !Number.isInteger(m.maxZoom) || m.maxZoom < 0 || m.maxZoom > (m.body === 'mars' ? 9 : 8)
     || !Number.isFinite(m.minHeightMeters) || !Number.isFinite(m.maxHeightMeters)
     || m.minHeightMeters < -32767 * m.scaleMeters || m.maxHeightMeters > 32767 * m.scaleMeters || m.minHeightMeters > m.maxHeightMeters
     || !m.tiles || typeof m.credit !== 'string' || typeof m.sourceUrl !== 'string'
@@ -52,7 +53,7 @@ export function parseTerrainManifest(value: unknown): TerrainManifest {
     for (let x = 0; x < 16; x++) for (let y = 0; y < 8; y++) {
       const page = m.indexPages!.pages[`${x}/${y}`]
       if (!page || page.url !== `indices/${x}/${y}.json` || !Number.isInteger(page.bytes)
-        || page.bytes <= 0 || page.bytes > 512000 || !/^[a-f0-9]{64}$/.test(page.sha256)) throw new Error('Invalid terrain metadata page')
+        || page.bytes <= 0 || page.bytes > (m.body === 'mars' && m.maxZoom === 9 ? 1024000 : 512000) || !/^[a-f0-9]{64}$/.test(page.sha256)) throw new Error('Invalid terrain metadata page')
     }
   }
   return m

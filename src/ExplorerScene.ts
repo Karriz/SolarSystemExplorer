@@ -6,14 +6,18 @@ import { constrainCamera, SURFACE_CLEARANCE } from './cameraSafety'
 import { GlobeTileLayer, brightenOceans } from './GlobeTileLayer'
 import { createCameraOrbit, type BodyCameraControls } from './cameraOrbit'
 import { GlobeTerrainLayer, type TerrainStatus } from './GlobeTerrainLayer'
+import { CubeTerrainLayer } from './CubeTerrainLayer'
+import { cubeSphereGeometry } from './cubeSphere'
+import { configureCubeColorMaterial } from './cubeColorMaterial'
 import { terrainBodies, type TerrainBody } from './terrain'
 import { RegionalTerrainLayer, type RegionalMetrics } from './RegionalTerrainLayer'
 import { earthPilotSources } from './RegionalTerrainSource'
 import { configureSurfaceMaterial, surfaceState } from './surfaceMaterial'
-import { configureMoonSurfaceMaterial, type MoonShade } from './moonSurfaceMaterial'
+import { configureMoonSurfaceMaterial, MARS_DETAIL_PROFILE, type MoonShade } from './moonSurfaceMaterial'
 import { geoDirection, pilotLocations } from './terrainPilot'
 import { fitTerrainShadow } from './terrainShadows'
-import { MoonVectorColor, type MoonColorMode } from './MoonVectorColor'
+import { configureTerrainHillshade } from './terrainHillshade'
+import { MoonVectorColor, MARS_BOUNDARY_SIGMA_METERS, MARS_RADIUS_METERS, type MoonColorMode } from './MoonVectorColor'
 
 export type ScreenMarker = { id: BodyId; x: number; y: number; visible: boolean }
 const DAY_MS = 86400000
@@ -113,13 +117,19 @@ export class ExplorerScene {
   private saturnRings: THREE.Group | null = null
   private textureLoader = new THREE.TextureLoader()
   private moonVectorColor = new MoonVectorColor()
+  private marsVectorColor = new MoonVectorColor('mars-vectors', MARS_RADIUS_METERS, MARS_BOUNDARY_SIGMA_METERS)
   private moonRasterColor?: THREE.Texture
-  private moonColorMode: MoonColorMode = 'raster'
+  private marsRasterColor?: THREE.Texture
+  private moonColorMode: MoonColorMode = '10-smooth'
+  private marsColorMode: 'raster' | '10-smooth' = '10-smooth'
+  private marsColorRequestId = 0
+  private terrainHillshade = { value: 1 }
   private disposed = false
   private surfaceTiles: GlobeTileLayer
-  private terrain = new Map<TerrainBody, GlobeTerrainLayer>()
-  private surfaces = { earth: surfaceState(), moon: surfaceState() }
+  private terrain = new Map<TerrainBody, GlobeTerrainLayer | CubeTerrainLayer>()
+  private surfaces = { earth: surfaceState(), moon: surfaceState(), mars: surfaceState() }
   private moonShade?: MoonShade
+  private marsShade?: MoonShade
   private regional = new Map<'earth' | 'moon', RegionalTerrainLayer>()
   private pilotMetricsKey = ''
   private onPilotStatus?: (body: 'earth' | 'moon', metrics: RegionalMetrics) => void
@@ -130,7 +140,8 @@ export class ExplorerScene {
   private onControlStart = () => { this.focusDistance = null; this.focusDirection = null; this.pilotAltitude = null }
 
   constructor(container: HTMLElement, onMarkers: (markers: ScreenMarker[]) => void,
-    onTerrainStatus: (status: TerrainStatus) => void = () => {}, onPilotStatus?: (body: 'earth' | 'moon', metrics: RegionalMetrics) => void) {
+    onTerrainStatus: (status: TerrainStatus) => void = () => {}, onPilotStatus?: (body: 'earth' | 'moon', metrics: RegionalMetrics) => void,
+    onMarsColorStatus: (status: string) => void = () => {}) {
     this.onPilotStatus = onPilotStatus
     this.container = container
     this.onMarkers = onMarkers
@@ -162,9 +173,22 @@ export class ExplorerScene {
     this.surfaces.earth.detail.value = 0
     this.createBodies()
     this.moonRasterColor = (this.bodies.get('moon')!.material as THREE.MeshStandardMaterial).map ?? undefined
+    void this.setMoonColor('10-smooth').catch(() => { void this.setMoonColor('raster') })
+    const initialMarsColors = this.setMarsColor('10-smooth')
+    const initialMarsColorRequest = this.marsColorRequestId
+    void initialMarsColors.then(applied => {
+      if (applied) onMarsColorStatus('')
+    }).catch(error => {
+      if (initialMarsColorRequest !== this.marsColorRequestId) return
+      console.error('Unable to load Mars MOC-WA vector colors:', error)
+      void this.setMarsColor('raster')
+      onMarsColorStatus('MOC-WA vector colors unavailable · showing fallback image')
+    })
     for (const layer of [
       { file: 'moon-detail.png', map: this.surfaces.moon.detailMap, ready: this.surfaces.moon.detailMapReady },
       { file: 'moon-medium-detail.png', map: this.surfaces.moon.mediumDetailMap, ready: this.surfaces.moon.mediumDetailReady },
+      { file: 'mars-detail.png', map: this.surfaces.mars.detailMap, ready: this.surfaces.mars.detailMapReady },
+      { file: 'mars-medium-detail.png', map: this.surfaces.mars.mediumDetailMap, ready: this.surfaces.mars.mediumDetailReady },
     ]) this.textureLoader.load(`${import.meta.env.BASE_URL}textures/${layer.file}`, texture => {
       if (this.disposed) { texture.dispose(); return }
       texture.colorSpace = THREE.NoColorSpace
@@ -174,9 +198,11 @@ export class ExplorerScene {
       layer.map.value = texture
       layer.ready.value = 1
     }, undefined, () => { /* Measured terrain remains usable if detail is unavailable. */ })
-    this.surfaceTiles = new GlobeTileLayer(this.bodies, this.renderer, new Set(['earth', 'moon']))
-    for (const id of terrainBodies) this.terrain.set(id, new GlobeTerrainLayer(this.bodies.get(id)!, onTerrainStatus,
-      new URL(import.meta.env.VITE_TERRAIN_BASE_URL || `${import.meta.env.BASE_URL}terrain/`, window.location.href).href, undefined, id, id === 'moon' ? this.surfaces.moon : undefined))
+    this.surfaceTiles = new GlobeTileLayer(this.bodies, this.renderer, new Set(['earth', 'moon', 'mars']))
+    const terrainUrl=new URL(import.meta.env.VITE_TERRAIN_BASE_URL || `${import.meta.env.BASE_URL}terrain/`,window.location.href).href
+    for (const id of terrainBodies) this.terrain.set(id,id==='moon'||id==='mars'
+      ? new CubeTerrainLayer(this.bodies.get(id)!,onTerrainStatus,terrainUrl,this.surfaces[id],this.terrainHillshade,id)
+      : new GlobeTerrainLayer(this.bodies.get(id)!,onTerrainStatus,terrainUrl,undefined,id,undefined,this.terrainHillshade))
     for (const id of ['earth', 'moon'] as const) this.regional.set(id, new RegionalTerrainLayer(this.bodies.get(id)!, id, this.surfaces[id]))
     earthPilotSources().forEach(source => this.regional.get('earth')!.addSource(source))
     this.updateBodyOrientations()
@@ -190,12 +216,19 @@ export class ExplorerScene {
   private createBodies() {
     for (const id of bodyOrder) {
       const radius = radiusAu(id)
-      const geometry = new THREE.SphereGeometry(radius, id === 'sun' ? 96 : 128, 96)
+      const geometry = (id==='moon'||id==='mars')?cubeSphereGeometry(radius):new THREE.SphereGeometry(radius, id === 'sun' ? 96 : 128, 96)
       const material = id === 'sun'
         ? new THREE.MeshBasicMaterial({ color: '#ffda87' })
         : new THREE.MeshStandardMaterial({ map: makeTexture(id), roughness: 1, metalness: 0 })
       if (id === 'earth') configureSurfaceMaterial(material, this.surfaces[id], bodyInfo[id].radiusKm * 1000, 1 / radius, true)
       if (id === 'moon') this.moonShade = configureMoonSurfaceMaterial(material, this.surfaces.moon, 149_597_870_700, true)
+      if (id === 'mars') {
+        // The shared detail material samples the color map by surface direction;
+        // the cube color hook then only needs to keep the emissive map aligned.
+        this.marsShade = configureMoonSurfaceMaterial(material, this.surfaces.mars, 149_597_870_700, true, new THREE.Vector3(), { value: new THREE.Vector3() }, MARS_DETAIL_PROFILE)
+        configureCubeColorMaterial(material)
+      }
+      if (id === 'moon' || id === 'mars') configureTerrainHillshade(material, this.terrainHillshade)
       const mesh = new THREE.Mesh(geometry, material)
       mesh.castShadow = id !== 'earth'
       mesh.receiveShadow = id !== 'earth'
@@ -206,6 +239,10 @@ export class ExplorerScene {
       if (id === 'moon' && this.moonShade) {
         mesh.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })
         configureMoonSurfaceMaterial(mesh.customDepthMaterial, this.surfaces.moon, 149_597_870_700, true, new THREE.Vector3(), this.moonShade.camera)
+      }
+      if (id === 'mars' && this.marsShade) {
+        mesh.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })
+        configureMoonSurfaceMaterial(mesh.customDepthMaterial, this.surfaces.mars, 149_597_870_700, true, new THREE.Vector3(), this.marsShade.camera, MARS_DETAIL_PROFILE)
       }
       mesh.userData.bodyId = id
       this.scene.add(mesh)
@@ -241,6 +278,17 @@ export class ExplorerScene {
         this.moonRasterColor = texture
         // A palette can finish loading before the original JPEG arrives.
         if (this.moonColorMode !== 'raster') return
+      }
+      if (id === 'mars') {
+        this.marsRasterColor?.dispose()
+        this.marsRasterColor = texture
+        if (this.marsColorMode !== 'raster') {
+          if (this.marsVectorColor.texture) {
+            material.map = this.marsVectorColor.texture
+            material.emissiveMap = material.map
+          }
+          return
+        }
       }
       if (id !== 'moon') material.map?.dispose()
       material.map = texture
@@ -353,15 +401,17 @@ export class ExplorerScene {
   setOrbits(visible: boolean) { this.showOrbits = visible; this.orbits.forEach(o => { o.visible = visible }) }
   setTerrain(enabled: boolean) { this.terrain.forEach(layer => layer.setEnabled(enabled)); this.regional.forEach(layer => layer.setEnabled(enabled)) }
   setTerrainExaggeration(value: number) { this.terrain.forEach(layer => layer.setExaggeration(value)); this.regional.forEach(layer => layer.setExaggeration(value)) }
+  setTerrainHillshade(enabled: boolean) { this.terrainHillshade.value = enabled ? 1 : 0 }
   private terrainShadows = true
   setTerrainShadows(enabled: boolean) { this.terrainShadows = enabled }
-  setSurfaceDetail(enabled: boolean) { this.surfaces.moon.detail.value = enabled ? 1 : 0 }
+  setSurfaceDetail(enabled: boolean) { this.surfaces.moon.detail.value = enabled ? 1 : 0; this.surfaces.mars.detail.value = enabled ? 1 : 0 }
   previewMoonBoundary() {
     const point = this.moonVectorColor.previewPoint()
     if (point) this.surfaceLocation('moon', point.lat, point.lon, 12000)
   }
   async setMoonColor(mode: MoonColorMode): Promise<boolean> {
     const material = this.bodies.get('moon')!.material as THREE.MeshStandardMaterial
+    this.moonColorMode = mode
     if (mode === 'raster') {
       this.moonVectorColor.cancel()
       material.map = this.moonRasterColor ?? material.map
@@ -380,6 +430,30 @@ export class ExplorerScene {
     this.moonVectorColor.replace(texture)
     this.moonColorMode = mode
     this.surfaces.moon.colorSharpen.value = 0
+    return true
+  }
+  async setMarsColor(mode: 'raster' | '10-smooth'): Promise<boolean> {
+    const requestId = ++this.marsColorRequestId
+    const material = this.bodies.get('mars')!.material as THREE.MeshStandardMaterial
+    this.marsColorMode = mode
+    if (mode === 'raster') {
+      this.marsVectorColor.cancel()
+      material.map = this.marsRasterColor ?? material.map
+      material.emissiveMap = material.map
+      material.needsUpdate = true
+      this.marsVectorColor.replace()
+      this.surfaces.mars.colorSharpen.value = 1
+      return true
+    }
+    const texture = await this.marsVectorColor.load(mode)
+    if (!texture || requestId !== this.marsColorRequestId || this.marsColorMode !== mode || this.disposed) return false
+    const previous = material.map
+    material.map = texture
+    material.emissiveMap = texture
+    material.needsUpdate = true
+    this.marsVectorColor.replace(texture)
+    this.surfaces.mars.colorSharpen.value = 0
+    if (previous && previous !== this.marsRasterColor) previous.dispose()
     return true
   }
   pilot(id: string, altitude?: number) {
@@ -526,6 +600,7 @@ export class ExplorerScene {
     }
     this.stars.position.copy(this.camera.position)
     this.terrain.get('moon')?.updateShadeCamera(this.camera)
+    this.terrain.get('mars')?.updateShadeCamera(this.camera)
     this.regional.get('moon')?.updateShadeCamera(this.camera)
     const moonBody = this.bodies.get('moon')
     if (this.moonShade && moonBody) {
@@ -534,6 +609,13 @@ export class ExplorerScene {
     }
     if (moonBody) this.moonVectorColor.updateView(this.camera, moonBody, this.surfaces.moon,
       this.selected === 'moon', this.hitGround, now)
+    const marsBody = this.bodies.get('mars')
+    if (this.marsShade && marsBody) {
+      marsBody.updateWorldMatrix(true, false)
+      this.marsShade.camera.value.copy(marsBody.worldToLocal(this.camera.position.clone()))
+    }
+    if (marsBody) this.marsVectorColor.updateView(this.camera, marsBody, this.surfaces.mars,
+      this.selected === 'mars', this.hitGround, now)
     this.surfaceTiles.update(this.camera, viewportHeight, now, this.selected === 'moon' ? 'moon' : this.selected === 'earth' && this.surfaces.earth.clipCount.value > 0 ? 'earth' : terrainBody)
     const closeTerrain = this.selected === 'moon' ? !!this.terrain.get('moon')?.active
       : !!this.regional.get(this.selected as 'earth' | 'moon')?.metrics().ready
@@ -585,7 +667,9 @@ export class ExplorerScene {
   dispose() {
     this.disposed = true
     this.moonVectorColor.dispose()
+    this.marsVectorColor.dispose()
     this.moonRasterColor?.dispose()
+    this.marsRasterColor?.dispose()
     cancelAnimationFrame(this.frame)
     this.resizeObserver.disconnect()
     this.controls.dispose()

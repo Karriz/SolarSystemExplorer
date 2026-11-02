@@ -11,3 +11,4 @@ import './terrainSurface.test.mjs'
 
 import './moonSurfaceMaterial.test.mjs'
 import './terrainShadows.test.mjs'
+import './cubeSphere.test.mjs'

@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { TileBounds } from './surfaceTiles.ts'
+import { cubeAddress, sampleCubeSurface } from './cubeSphere.ts'
 
 export type TerrainSurfaceSampler = (lat: number, lon: number, point: THREE.Vector3, normal: THREE.Vector3) => boolean
 
@@ -62,6 +63,14 @@ export function firstTerrainSurfaceHit(picker: THREE.Raycaster, meshes: THREE.Ob
 /** Match the fallback's actual facets, including the coarser base globe when a
  * measured global release is unavailable. No ideal-sphere/mesh height mismatch. */
 export function sphereSurfaceSampler(geometry: THREE.SphereGeometry): TerrainSurfaceSampler {
+  if(geometry.userData.cubeSphereSize){
+    const size=geometry.userData.cubeSphereSize as number,d=new THREE.Vector3()
+    return(lat,lon,point,normal)=>{
+      d.set(Math.cos(lat*Math.PI/180)*Math.cos(lon*Math.PI/180),Math.sin(lat*Math.PI/180),-Math.cos(lat*Math.PI/180)*Math.sin(lon*Math.PI/180))
+      const address=cubeAddress(d,0)
+      return sampleCubeSurface(geometry,address,size,d,point,normal,address.face*size*size,1/geometry.parameters.radius)
+    }
+  }
   const sample = terrainSurfaceSampler(), parameters = geometry.parameters
   const bounds = { west: -180, east: 180, north: 90, south: -90, span: 360 }
   return (lat, lon, point, normal) => sample(geometry, bounds, parameters.widthSegments + 1,

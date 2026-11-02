@@ -43,10 +43,10 @@ export const textureSources: Partial<Record<BodyId, TextureSource>> = {
   },
   mars: {
     file: 'mars.jpg',
-    label: 'Mars image texture',
+    label: 'Mars fallback color map',
     page: 'https://science.nasa.gov/3d-resources/mars/',
     download: 'https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/image/mars/Mars.jpg',
     credit: 'NASA / JPL-Caltech; Viking imagery processed at USGS',
-    note: 'Global 1440 × 720 color map. Surface appearance is illustrative for all simulation dates.',
+    note: 'Global 1440 × 720 fallback image; surface appearance is illustrative for all simulation dates.',
   },
 }

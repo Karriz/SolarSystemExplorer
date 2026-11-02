@@ -3,9 +3,53 @@ import numpy as np
 import shapely
 from shapely.geometry import Polygon
 from moon_vector_contours import smooth_coverage, validate_coverage
+from moon_vector_curves import fit_shared_corners, curved_ring_path
 
 
 class SharedContours(unittest.TestCase):
+    def corner_coverage(self):
+        return np.array([Polygon([(0,0),(4,0),(4,4),(8,4),(8,8),(0,8)]),
+                         Polygon([(4,0),(8,0),(8,4),(4,4)])], dtype=object)
+
+    def test_shared_quadratics_and_tangents(self):
+        coverage = self.corner_coverage()
+        corners, stats = fit_shared_corners(coverage,8,8,8)
+        self.assertEqual(stats['curvedCorners'],1)
+        a,b = corners[(4.,4.)]
+        p = np.array([4.,4.])
+        self.assertAlmostEqual(np.linalg.norm(a-p),.65)
+        self.assertAlmostEqual(np.linalg.norm(b-p),.65)
+        paths=[curved_ring_path(poly.exterior,0,0,corners) for poly in coverage]
+        self.assertTrue(all('Q4,4 ' in path for path in paths))
+        # Canonical sampling keeps opposite faces bit-identical. This is an
+        # independent flattened coverage check on the actual quadratic shape.
+        t=np.linspace(0,1,33)[:,None]
+        arc=(1-t)**2*a+2*(1-t)*t*p+t**2*b
+        polygons=[]
+        for poly in coverage:
+            vertices=list(poly.exterior.coords[:-1]); flattened=[]
+            for i,v in enumerate(vertices):
+                if tuple(v)==(4.,4.):
+                    before=np.asarray(vertices[i-1])-p
+                    forward=np.dot(before,a-p)>np.dot(before,b-p)
+                    flattened.extend(arc if forward else arc[::-1])
+                else:
+                    flattened.append(v)
+            polygons.append(Polygon(flattened))
+        validate_coverage(np.array(polygons,dtype=object),8,8)
+
+    def test_curve_does_not_cut_across_tile_boundary(self):
+        corners,_=fit_shared_corners(self.corner_coverage(),8,8,4)
+        self.assertNotIn((4.,4.),corners)
+
+    def test_curve_protects_unrelated_island(self):
+        a,b=self.corner_coverage()
+        island=shapely.box(4.15,3.8,4.25,3.9)
+        coverage=np.array([a,b.difference(island),island],dtype=object)
+        validate_coverage(coverage,8,8)
+        corners,_=fit_shared_corners(coverage,8,8,8)
+        self.assertNotIn((4.,4.),corners)
+
     def test_staircase_becomes_diagonal_without_gaps(self):
         edge = [(3, 0), (3, 1), (4, 1), (4, 2), (5, 2), (5, 3), (6, 3), (6, 8)]
         polygons = np.array([Polygon([(0, 0), *edge, (0, 8)]),

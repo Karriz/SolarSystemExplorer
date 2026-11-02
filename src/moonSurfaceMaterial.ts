@@ -8,6 +8,17 @@ export type MoonShade = {
   metersPerUnit: { value: number }
 }
 
+/** Per-body scale of the shared detail system: the triplanar repeat is a
+ * physical distance on the surface, so each body needs its radius and the
+ * repeat length baked into its textures. */
+export type SurfaceDetailProfile = {
+  radiusMeters: number
+  detailRepeatMeters: number
+  mediumRepeatMeters: number
+}
+export const MOON_DETAIL_PROFILE: SurfaceDetailProfile = { radiusMeters: 1737400, detailRepeatMeters: 64, mediumRepeatMeters: 256 }
+export const MARS_DETAIL_PROFILE: SurfaceDetailProfile = { radiusMeters: 3389500, detailRepeatMeters: 128, mediumRepeatMeters: 512 }
+
 /** Overlapping distance bands keep medium features after grain filters out. */
 const DETAIL_NEAR_METERS = 300
 const DETAIL_FAR_METERS = 3000
@@ -35,20 +46,22 @@ export function moonColorSharpenWeight(pixelsPerTexel: number): number {
 function moonColorSharpenChunk() {
   const { riseStart, riseEnd, fallStart, fallEnd, limit, strength } = MOON_COLOR_SHARPEN
   return `#ifdef USE_MAP
-        vec4 moonColor = texture2D(map, vMapUv);
+        vec2 moonLonLat = surfaceLonLat();
+        vec2 moonUv = vec2(moonLonLat.x / 360.0 + 0.5, moonLonLat.y / 180.0 + 0.5);
+        vec2 moonUvDx = dFdx(moonUv), moonUvDy = dFdy(moonUv);
+        moonUvDx.x -= round(moonUvDx.x); moonUvDy.x -= round(moonUvDy.x);
+        vec4 moonColor = textureGrad(map, moonUv, moonUvDx, moonUvDy);
         vec2 moonTexel = 1.0 / vec2(textureSize(map, 0));
-        vec2 moonUvDx = dFdx(vMapUv);
-        vec2 moonUvDy = dFdy(vMapUv);
         float moonMagX = moonTexel.x / max(length(vec2(moonUvDx.x, moonUvDy.x)), 1.0e-8);
         float moonMagY = moonTexel.y / max(length(vec2(moonUvDx.y, moonUvDy.y)), 1.0e-8);
         float moonSharpX = smoothstep(${glslFloat(riseStart)}, ${glslFloat(riseEnd)}, moonMagX) * (1.0 - smoothstep(${glslFloat(fallStart)}, ${glslFloat(fallEnd)}, moonMagX));
         float moonSharpY = smoothstep(${glslFloat(riseStart)}, ${glslFloat(riseEnd)}, moonMagY) * (1.0 - smoothstep(${glslFloat(fallStart)}, ${glslFloat(fallEnd)}, moonMagY));
         float moonSharp = max(moonSharpX, moonSharpY) * moonColorSharpen;
         if (moonSharp > 0.001) {
-          vec3 moonEast = texture2D(map, vMapUv + vec2(moonTexel.x, 0.0)).rgb;
-          vec3 moonWest = texture2D(map, vMapUv - vec2(moonTexel.x, 0.0)).rgb;
-          vec3 moonNorth = texture2D(map, vMapUv + vec2(0.0, moonTexel.y)).rgb;
-          vec3 moonSouth = texture2D(map, vMapUv - vec2(0.0, moonTexel.y)).rgb;
+          vec3 moonEast = textureGrad(map, moonUv + vec2(moonTexel.x, 0.0), moonUvDx, moonUvDy).rgb;
+          vec3 moonWest = textureGrad(map, moonUv - vec2(moonTexel.x, 0.0), moonUvDx, moonUvDy).rgb;
+          vec3 moonNorth = textureGrad(map, moonUv + vec2(0.0, moonTexel.y), moonUvDx, moonUvDy).rgb;
+          vec3 moonSouth = textureGrad(map, moonUv - vec2(0.0, moonTexel.y), moonUvDx, moonUvDy).rgb;
           vec3 moonCenter = moonColor.rgb;
           vec3 moonMin = min(moonCenter, min(min(moonEast, moonWest), min(moonNorth, moonSouth)));
           vec3 moonMax = max(moonCenter, max(max(moonEast, moonWest), max(moonNorth, moonSouth)));
@@ -72,8 +85,7 @@ function moonColorSharpenChunk() {
           vec3 patchColor = texture2D(moonVectorMap, safePatchUv).rgb;
           if (moonVectorSoftReady > 0.5) {
             vec3 softColor = texture2D(moonVectorSoftMap, safePatchUv).rgb;
-            float boundaryBlend = 1.0 - smoothstep(2500.0, 20000.0, length(vMoonViewMeters));
-            patchColor = mix(patchColor, softColor, boundaryBlend);
+            patchColor = softColor;
           }
           moonColor.rgb = mix(moonColor.rgb, patchColor, weight);
         }
@@ -84,8 +96,10 @@ function moonColorSharpenChunk() {
 /** Shared, mipmapped normal/roughness textures supply fine and medium material
  * detail. Triplanar body-fixed sampling avoids seams and polar stretching.
  * It never displaces the measured mesh or runs a procedural field per pixel. */
-export function configureMoonSurfaceMaterial(material: THREE.Material, state: SurfaceState, metersPerUnit: number, clip: boolean, origin = new THREE.Vector3(), camera = { value: new THREE.Vector3() }): MoonShade {
+export function configureMoonSurfaceMaterial(material: THREE.Material, state: SurfaceState, metersPerUnit: number, clip: boolean, origin = new THREE.Vector3(), camera = { value: new THREE.Vector3() }, profile: SurfaceDetailProfile = MOON_DETAIL_PROFILE): MoonShade {
   const shade: MoonShade = { camera, origin: { value: origin }, metersPerUnit: { value: metersPerUnit } }
+  const fineScale = profile.radiusMeters / profile.detailRepeatMeters
+  const mediumScale = profile.radiusMeters / profile.mediumRepeatMeters
   const previous = material.onBeforeCompile
   const previousKey = material.customProgramCacheKey()
   material.onBeforeCompile = (shader, renderer) => {
@@ -99,12 +113,11 @@ export function configureMoonSurfaceMaterial(material: THREE.Material, state: Su
       moonVectorMap: state.vectorColorMap, moonVectorBounds: state.vectorColorBounds, moonVectorReady: state.vectorColorReady,
       moonVectorSoftMap: state.vectorColorSoftMap, moonVectorSoftReady: state.vectorColorSoftReady })
     if (clip) Object.assign(shader.uniforms, { surfaceClips: state.clips, surfaceClipCount: state.clipCount })
-    shader.vertexShader = `varying float vMoonFade; varying float vMoonMediumFade; varying vec3 vMoonViewMeters; varying vec3 vMoonDir; uniform vec3 moonCamera; uniform vec3 moonOrigin; uniform float moonMetersPerUnit; uniform float moonDetail;
+    shader.vertexShader = `varying float vMoonFade; varying float vMoonMediumFade; varying vec3 vMoonDir; uniform vec3 moonCamera; uniform vec3 moonOrigin; uniform float moonMetersPerUnit; uniform float moonDetail;
       ${shader.vertexShader}`
     shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
       vec3 moonPlaced = position + moonOrigin;
       float moonMeters = distance(moonPlaced, moonCamera) * moonMetersPerUnit;
-      vMoonViewMeters = (moonPlaced - moonCamera) * moonMetersPerUnit;
       vMoonFade = 0.0;
       vMoonMediumFade = 0.0;
       if (moonDetail > 0.0 && moonMeters > 0.0 && moonMeters < 1.0e8) {
@@ -113,9 +126,9 @@ export function configureMoonSurfaceMaterial(material: THREE.Material, state: Su
       }
       float moonLen2 = dot(moonPlaced, moonPlaced);
       vMoonDir = moonLen2 > 1.0e-20 ? moonPlaced * inversesqrt(moonLen2) : vec3(0.0, 1.0, 0.0);`)
-    shader.fragmentShader = `varying float vMoonFade; varying float vMoonMediumFade; varying vec3 vMoonViewMeters; varying vec3 vMoonDir;
+    shader.fragmentShader = `varying float vMoonFade; varying float vMoonMediumFade; varying vec3 vMoonDir;
       ${clip ? `uniform vec4 surfaceClips[${MAX_SURFACE_CLIPS}]; uniform int surfaceClipCount;` : ''}
-      vec2 surfaceLonLat() { vec3 p = normalize(vMoonDir); return vec2(atan(-p.z, p.x), asin(clamp(p.y, -1.0, 1.0))) * 57.295779513; }
+      vec2 surfaceLonLat() { vec3 p = normalize(vMoonDir); float lon = dot(p.xz,p.xz) > 1.0e-20 ? atan(-p.z,p.x) : 0.0; return vec2(lon, asin(clamp(p.y, -1.0, 1.0))) * 57.295779513; }
       bool surfaceInside(vec2 p, vec4 b) { return p.x >= b.x && p.x <= b.z && p.y >= b.y && p.y <= b.w; }
       ${shader.fragmentShader}`
     if (clip) shader.fragmentShader = shader.fragmentShader.replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
@@ -155,7 +168,7 @@ export function configureMoonSurfaceMaterial(material: THREE.Material, state: Su
           float moonTint = 0.0;
           if (moonFineOn) {
             vec3 fineSlope;
-            float fineRoughness = moonSurfaceSample(moonDetailMap, moonDirection * (1737400.0 / 64.0), moonWeights, fineSlope);
+            float fineRoughness = moonSurfaceSample(moonDetailMap, moonDirection * (${glslFloat(fineScale)}), moonWeights, fineSlope);
             moonSlope += fineSlope * (0.4 * vMoonFade);
             roughnessFactor = mix(roughnessFactor, fineRoughness, vMoonFade);
             moonTint += (fineRoughness - 0.96) * (0.55 * vMoonFade);
@@ -167,7 +180,7 @@ export function configureMoonSurfaceMaterial(material: THREE.Material, state: Su
             // without additional texture fetches or per-pixel noise.
             vec3 mediumWeights = abs(moonDirection);
             mediumWeights /= mediumWeights.x + mediumWeights.y + mediumWeights.z;
-            float mediumRoughness = moonSurfaceSample(moonMediumMap, moonDirection * (1737400.0 / 256.0), mediumWeights, mediumSlope);
+            float mediumRoughness = moonSurfaceSample(moonMediumMap, moonDirection * (${glslFloat(mediumScale)}), mediumWeights, mediumSlope);
             moonSlope += mediumSlope * (0.45 * vMoonMediumFade);
             roughnessFactor = mix(roughnessFactor, mediumRoughness, 0.65 * vMoonMediumFade);
             moonTint += (mediumRoughness - 0.96) * (0.8 * vMoonMediumFade);
@@ -180,15 +193,15 @@ export function configureMoonSurfaceMaterial(material: THREE.Material, state: Su
         }`)
     }
   }
-  material.customProgramCacheKey = () => `${previousKey}/moon-normal-texture-v5/${clip ? 'clip' : 'open'}`
+  material.customProgramCacheKey = () => `${previousKey}/moon-normal-texture-v7/${profile.radiusMeters}/${profile.detailRepeatMeters}/${profile.mediumRepeatMeters}/${clip ? 'clip' : 'open'}`
   configureTerrainShadowFade(material)
   return shade
 }
 
 /** Skirts never cast shadows. Depth programs only clip coverage and skirts;
  * they do not sample the detail texture or modify measured geometry. */
-export function configureMoonTerrainDepth(material: THREE.Material, state: SurfaceState, metersPerUnit: number, clip: boolean, origin = new THREE.Vector3(), camera = { value: new THREE.Vector3() }) {
-  configureMoonSurfaceMaterial(material, state, metersPerUnit, clip, origin, camera)
+export function configureMoonTerrainDepth(material: THREE.Material, state: SurfaceState, metersPerUnit: number, clip: boolean, origin = new THREE.Vector3(), camera = { value: new THREE.Vector3() }, profile: SurfaceDetailProfile = MOON_DETAIL_PROFILE) {
+  configureMoonSurfaceMaterial(material, state, metersPerUnit, clip, origin, camera, profile)
   const previous = material.onBeforeCompile, key = material.customProgramCacheKey()
   material.onBeforeCompile = (shader, renderer) => {
     previous.call(material, shader, renderer)

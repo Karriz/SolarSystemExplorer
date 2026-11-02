@@ -11,6 +11,7 @@ import { TerrainImagery } from './TerrainImagery.ts'
 import { bodyInfo } from './ephemeris.ts'
 import type { SurfaceState } from './surfaceMaterial.ts'
 import { configureMoonSurfaceMaterial, configureMoonTerrainDepth, type MoonShade } from './moonSurfaceMaterial.ts'
+import { configureTerrainHillshade, type HillshadeState } from './terrainHillshade.ts'
 
 const MAX_REQUESTS = 4
 const MAX_BYTES = 48 * 1024 * 1024
@@ -18,7 +19,7 @@ const MAX_LEAVES = 48
 const RETRY_MS = 30_000
 /** Low-poly lunar style: refine until a mesh facet covers about this many pixels. */
 const MOON_FACET_PIXELS = 1
-export type TerrainStatus = { body: TerrainBody; state: 'loading' | 'ready' | 'unavailable' | 'off'; loadedTiles: number; failedTiles: number; source?: { resolution: number; credit: string; url: string; gaps: boolean; approximate: boolean } }
+export type TerrainStatus = { body: TerrainBody; state: 'loading' | 'ready' | 'unavailable' | 'off'; loadedTiles: number; failedTiles: number; source?: { resolution: number; credit: string; url: string; gaps: boolean; approximate: boolean; licenseUrl?: string } }
 type Node = { key: string; info: TerrainTileInfo; address: TileAddress; sphere: THREE.Sphere; box?: THREE.Box3; lastUsed: number; retryAt: number;
   bytes: number; samples?: number; request?: AbortController; heights?: Float32Array; mesh?: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>; edge?: TerrainEdge }
 type Decoder = Pick<TerrainDecoder, 'decode' | 'dispose'>
@@ -65,7 +66,8 @@ export class GlobeTerrainLayer {
   private moonShade?: MoonShade
 
   constructor(body: THREE.Mesh, onStatus: (status: TerrainStatus) => void,
-    baseUrl: string, createDecoder: () => Decoder = () => new TerrainDecoder(), bodyId: TerrainBody = 'moon', surface?: SurfaceState) {
+    baseUrl: string, createDecoder: () => Decoder = () => new TerrainDecoder(), bodyId: TerrainBody = 'moon', surface?: SurfaceState,
+    hillshade?: HillshadeState) {
     this.bodyId = bodyId
     this.surface = surface
     this.imagery = new TerrainImagery(bodyId)
@@ -91,6 +93,7 @@ export class GlobeTerrainLayer {
     }
     this.material.customProgramCacheKey = () => 'terrain-coverage-v1'
     if (surface && bodyId === 'moon') this.moonShade = configureMoonSurfaceMaterial(this.material, surface, this.radiusMeters, true)
+    if (hillshade) configureTerrainHillshade(this.material, hillshade)
     this.report()
     void this.loadManifest()
   }
@@ -382,9 +385,13 @@ export class GlobeTerrainLayer {
         bounds: terrainBounds(n.address), origin: new THREE.Vector3(), geometry: n.mesh!.geometry, edge: n.edge! })))
       this.stitchedSignature = signature
     }
-    this.imagery.update(this.bodyId === 'moon' ? [] : visible.map(n => n.address), now)
+    // Mars keeps its selected MOC-WA vector color map at every LOD. The
+    // available Viking tile layer is a different color product and would
+    // replace the configured map as terrain tiles become active.
+    const useStreamedImagery = this.bodyId !== 'moon' && this.bodyId !== 'mars'
+    this.imagery.update(useStreamedImagery ? visible.map(n => n.address) : [], now)
     for (const node of this.nodes.values()) if (node.mesh) {
-      const map = (this.bodyId === 'moon' ? undefined : this.imagery.texture(node.address)) ?? this.baseMaterial.map
+      const map = (useStreamedImagery ? this.imagery.texture(node.address) : undefined) ?? this.baseMaterial.map
       const material = node.mesh.material
       if (material.map !== map) {
         const hadMap = !!material.map
@@ -613,7 +620,7 @@ export class GlobeTerrainLayer {
       loadedTiles: [...this.nodes.values()].filter(node => node.mesh).length,
       failedTiles: [...this.nodes.values()].filter(node => node.retryAt > 0).length + [...this.pages.values()].filter(page => page.retryAt > 0).length,
       source: this.manifest ? { resolution: this.manifest.sourceResolutionMeters, credit: this.manifest.credit,
-        url: this.manifest.sourceUrl, gaps: !!this.manifest.missingPixels, approximate: !!this.manifest.referenceSurfaceApproximation } : undefined }
+        url: this.manifest.sourceUrl, gaps: !!this.manifest.missingPixels, approximate: !!this.manifest.referenceSurfaceApproximation, licenseUrl: this.manifest.licenseUrl } : undefined }
     const key = JSON.stringify(status)
     if (key !== this.reported) { this.reported = key; this.onStatus(status) }
   }

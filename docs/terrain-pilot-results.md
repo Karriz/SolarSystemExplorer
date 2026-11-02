@@ -279,3 +279,29 @@ The local color path is a complete-release, opt-in-by-presence pyramid from the 
 One complete equatorial IMG product was downloaded and SHA-256 checked. Its Hadley source tile produced a 52,508-byte lossless WebP at level 8; a polar sample produced a 6,032-byte partially covered tile. The complete tile release size has **not** been measured. An adjacent Hadley tile pair built from the same numeric source had a median reflectance difference of 0.000034 and 99th percentile 0.000415 when resampled at the shared geographic edge; a partial north-polar pair had median 0 and 99th percentile 0.00134 over valid overlap. These are source/tile continuity checks, not rendered pixel acceptance. A Chromium/SwiftShader probe compiled the local shader without page errors and reached level 8 at Hadley with the injected local sample, but that probe used only a small partial tile set and therefore reported missing preview tile requests. Its polar screenshot is unsuitable for acceptance because the retained polar source is a sparse range sample, leaving large unobserved wedges. It does not represent the full polar product.
 
 The full archive download stopped when NASA's CloudFront endpoint returned HTTP 429 with `Retry-After: 3600` after parallel range requests. The downloader was changed to use one resumable stream per product to minimize request count. The full local release is **not installed** (`public/terrain/moon/wac643-304ppd-v1/manifest.json` is absent), so the running app still uses WMS display imagery and its polar fade. Completing all ten source downloads, building and validating the full release, and checking real rendered polar/dateline views remain necessary before claiming faster global color or accepted polar quality.
+
+
+## Global Mars MOLA–HRSC 200 m upgrade — 2026-11-02
+
+Mars now selects `mars/hrsc-mola200-v2-e8bfe4c3b9de-g129-z9-v3-r2/manifest.json` in the terrain catalog. The source is the [USGS global 200 m HRSC/MOLA v2 elevation product](https://astrogeology.usgs.gov/search/map/mars_mgs_mola_mex_hrsc_blended_dem_global_200m), attributed to Fergason, Hare and Laura (2018), USGS and the MOLA/HRSC teams. MOLA is CC0; HRSC and the derived blended terrain retain CC BY-SA 3.0 IGO terms. The app links the elevation license alongside source attribution.
+
+The official GeoTIFF is 11,384,463,908 bytes, SHA-256 `e8bfe4c3b9dee9d5fdb8c4d49798869654e552e7b154712c9e12d6d117464419`. Its S3 multipart checksum also matched `94ec792407f5a3da2f8b87aba42613eb-1358`. The input is signed 16-bit metre elevation, 106,694 × 53,347 pixels, with a geographic pixel step of 0.003374120830641 degrees and a 3,396,190 m projection radius. Heights retain the MOLA areoid reference; rendering continues to use the existing 3,389,500 m mean-radius sphere, with that approximation retained in metadata and the UI.
+
+The builder now accepts this geographic GeoTIFF transform directly. The source ends a fraction of a pixel short of +180 degrees and contains 39,957 NoData pixels in its final longitude column. Only those edge gaps are interpolated between neighboring measured samples across the dateline, with the actual wrapped distances used. The manifest records the original missing count and edge processing. All other NoData remains explicit; this release has no remaining missing source pixels after that bounded edge repair.
+
+| Delivered terrain | Previous MOLA | New MOLA–HRSC |
+| --- | ---: | ---: |
+| Nominal source spacing | 463 m | 200 m |
+| Geographic tile grid | 65 × 65, level 8 | 129 × 129, level 9 |
+| Finest north–south delivery spacing | approximately 650 m | approximately 163 m |
+| Height tiles | 174,762 | 699,050 |
+| Compressed height payload | 816,475,166 bytes | 8,793,030,084 bytes |
+| Paged metadata payload | 24,899,876 bytes | 99,985,557 bytes |
+
+The new source has approximately 22.77 GB of normalized working data. The full delivered height payload is approximately 8.19 GiB, plus about 95.4 MiB of metadata. These are whole-release storage figures; clients stream needed tiles and metadata. The existing smoothed MOC-WA color default and hillshade remain active. Cube rendering keeps 33 × 33 meshes while allowing level 10 for Mars. Numeric height-cache space adjusts to the geometry and metadata allocation, preserving the existing estimated 128 MiB body budget.
+
+Validation completed before catalog publication: all 699,050 tile hashes and lengths, bounds, east/west and north/south edges, dateline, poles, and parent/child samples. The actual TypeScript runtime parser accepted every tile entry in all 128 metadata pages; the largest page was 794,277 bytes. Nine native delivered vertices were independently compared with direct GeoTIFF interpolation across Valles, Olympus, Hellas, high latitudes and both sides of the dateline. Maximum height rounding error was 0.388 m, within the one-metre encoding's half-metre rounding bound.
+
+A seven-case Chromium/SwiftShader preview covered regional Valles, a close canyon wall, both poles, a cube edge, a cube corner and the dateline. All views settled without page or shader errors, and wanted/displayed terrain stayed stable at a fixed camera. The close wall reached source level 9 / cube level 10. Maximum observed tracked allocation was 123.99 MiB and maximum visible triangles were 290,304. Software-renderer results establish functional coverage and shader behavior; they are not hardware performance evidence. Fixed-date before/after images and reports are under `.terrain-cache/mars-upgrade/`; the new regional view shows considerably more canyon-wall and ridge structure. The offline Mars/Moon pipeline checks, 112 automated tests and app build pass.
+
+The product still incorporates HRSC over 44% of Mars; other areas interpolate MOLA, and USGS documents localized blend artifacts. A 200 m output grid does not establish uniform 200 m measured resolution or vertical accuracy.

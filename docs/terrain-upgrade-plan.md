@@ -1,13 +1,15 @@
 # Terrain and surface-detail upgrade plan
 
-Updated: 2026-11-01
+Updated: 2026-11-02
 Status: Earth LOD, hosted color, focused shadows, and view-centered coverage implemented; full quality/hardware acceptance remains open. See [pilot results](terrain-pilot-results.md) for source downloads, derived sizes, validation, and remaining quality/performance gates.
 
 ## Implementation status
 
+Moon and Mars now render their base globes and streamed terrain with six equiangular cube faces. The shared numeric adapter samples each body's existing measured geographic elevation release onto cube meshes at runtime. Mars uses the global 200 m MOLA–HRSC v2 release and smoothed MOC-WA color default. Its geographic height pyramid uses 129×129 samples through level 9 (approximately 163 m delivery spacing), with cube meshes refining through level 10. Mars color is sampled by surface direction per fragment to preserve geographic alignment at cube edges, poles, and the dateline. Both bodies retain the hillshade toggle and terrain exaggeration. See the [Mars upgrade results](terrain-pilot-results.md#global-mars-molahrsc-200-m-upgrade--2026-11-02) for source checks, derived sizes, dateline processing and browser coverage. The Mars browser checks are available as `npm run mars:check-cube` and `npm run mars:check-cube-colors`.
+
 The Moon now uses one whole-globe LOLA LDEM_256 release (approximately 118 m source spacing), replacing the old approximately 474 m baseline. The app no longer loads the Hadley SLDEM overlay. The current CGI Moon Kit texture remains in use by user choice: the exact global corrected Kaguya reflectance product was not available from the checked official download services, and the regional alternative is not substituted. See [global Moon results](terrain-pilot-results.md#global-moon-elevation--2026-11-01).
 
-An optional [vector color experiment](moon-vector-color.md) traces the Moon Kit image into 6-, 10-, or 16-color regions. The Moon panel can switch between these palettes and the original image, which remains the default. Two further 10-color variants simplify shared boundaries into diagonal or gently smoothed outlines, with adaptive close-view rasterization shared by the globe and measured terrain. View-dependent vector delivery, curve fitting, and polar quality remain future work.
+An optional [vector color experiment](moon-vector-color.md) traces the Moon Kit image into 6-, 10-, or 16-color regions. The Moon panel can switch between these palettes and the original image, which remains the default. Two further 10-color variants use diagonal or shared quadratic Bézier outlines, with adaptive close-view rasterization shared by the globe and measured terrain. The smoothed mode has a fixed surface-space color blend of approximately 300 m in linear light, with no distance-based material fade. View-dependent vector delivery and polar quality remain future work.
 
 The earlier Hadley overlay implementation matches exposed edges to the rendered global fallback, including when fine tiles fail or fallback LOD changes. Drawable parent replacement and physical-surface picking also cover GPU eviction and skirt walls. The October 31 source-edge follow-up passes 81 tests plus build and targeted low-altitude lunar/Earth browser checks. This is perimeter continuity, not a full source/datum blend; see [results and remaining limits](terrain-pilot-results.md#source-edge-continuity-and-physical-ground-picking--2026-10-31).
 
@@ -77,7 +79,7 @@ The planned 120 m and 60 m lunar tiers are candidate source/sampling scales with
 | --- | --- | --- | --- |
 | Earth | Small coarse globe fallback; no Earth terrain adapter existed at review time | Stream Mapterhorn elevation, using approximately 30 m global source coverage and finer regional sources where available | Test three representative areas before broad rollout; no bundled global high-resolution archive |
 | Moon | Global approximately 118 m LOLA LDEM_256, implemented November 1 | One source for all latitudes; finest rendering mesh approximately 166 m north–south | Current CGI Moon Kit texture retained; global corrected Kaguya reflectance remains deferred; meter-scale sites are optional later work |
-| Mars | Existing approximately 463 m MOLA source | Add a small number of contiguous HRSC regional overlays, with a processed sampling scale chosen from medium-view comparisons up to the approximately 50 m source detail | Do not download/process the full 200 m blend by default; evaluate a regional extract if it is simpler than the direct HRSC path; HiRISE is optional later work |
+| Mars | Global 200 m MOLA–HRSC v2 blend, approved November 2 | Whole-globe 129×129 geographic height pyramid through level 9, streamed into cube-sphere meshes | HRSC contributes finer terrain over 44% of Mars in this product; elsewhere it interpolates MOLA. Approximately 50 m regional HRSC and HiRISE remain possible later work |
 | Mercury | Existing approximately 665 m MESSENGER global source | Add improved 250 m north-polar topography covering 65–90°N | Start with the bounded polar dataset; defer other regional overlays until their benefit is demonstrated |
 | Venus | Existing Magellan dataset on an approximately 4.6 km grid | Evaluate approximately 1–2 km radar-stereo topography in selected regions | Keep the global baseline; prioritize materials and atmospheric illumination over extensive elevation processing |
 
@@ -98,7 +100,7 @@ Documentation availability, a downloadable numerical raster, browser access, and
 
 For each candidate, record the exact URL/version, source terms and attribution, checksums when available, download granularity, compressed input size, normalized working size, conversion time, and output size. A small output crop does not necessarily mean a small source download. Never substitute 404/timeouts with invented high-resolution terrain: retain the last valid coarser source and bounded retry/backoff.
 
-Source license metadata must be preserved per adapter. The current builder writes a generic public-domain license; it must not apply that label to new sources such as the HRSC/MOLA blend, whose metadata includes HRSC CC BY-SA 3.0 IGO terms. Source provenance and terms must travel with derived releases.
+Source license metadata must be preserved per adapter. The builder preserves per-source license metadata, including the HRSC/MOLA blend's HRSC CC BY-SA 3.0 IGO terms, and the app links the elevation license alongside attribution. Source provenance and terms must travel with derived releases.
 
 ## Phase 1: Shared terrain foundation
 
@@ -151,11 +153,11 @@ The pilot should establish practical resource limits for the other bodies, not t
 
 Expected benefit: improved crater profiles, slopes, silhouettes, and terrain illumination across useful exploration areas. Meter-scale coverage remains explicitly local.
 
-## Phase 4: Mars — continuous regional detail before tiny patches
+## Phase 4: Mars — global 200 m baseline and regional detail
 
 - [ ] Select a small number of substantial HRSC regions with available numerical elevation and acceptable quality.
 - [ ] Compare direct approximately 50 m HRSC overlays against the existing MOLA terrain.
-- [ ] Evaluate whether the existing 200 m HRSC/MOLA blend provides a worthwhile intermediate tier, accounting for limited improved coverage and documented blending artifacts.
+- [x] Adopt the global 200 m HRSC/MOLA v2 blend as requested on November 2, with dense source delivery, cube-sphere rendering, source-specific attribution, and recorded dateline-edge processing.
 - [ ] Match height references and blend regional boundaries into MOLA.
 - [ ] After the core milestone, optionally add one selected 1–2 m HiRISE destination once regional processing cost and source quality are understood.
 - [ ] Combine measured regional reflectance/property data with proposed dust, sand, and rock materials; keep generated fine detail distinct from measured topography.

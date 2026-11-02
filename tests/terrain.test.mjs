@@ -335,6 +335,22 @@ test('the global Moon accepts denser 129 grids while retaining bounded metadata 
   assert.throws(()=>parseTerrainManifest({...m,schema:1}))
 })
 
+test('200 m Mars terrain accepts dense grids and level 9 metadata without relaxing other bodies',()=>{
+  const {m}=pagedManifest()
+  Object.assign(m,{body:'mars',sampleSize:129,maxZoom:9,referenceRadiusMeters:3389500,
+    scaleMeters:1,frame:'IAU2000',sourceResolutionMeters:200})
+  for(const page of Object.values(m.indexPages.pages))page.bytes=900000
+  assert.equal(parseTerrainManifest(m).maxZoom,9)
+  assert.throws(()=>parseTerrainManifest({...m,maxZoom:10}))
+  assert.throws(()=>parseTerrainManifest({...m,sampleSize:257}))
+  const page={}
+  for(let z=4;z<=9;z++)for(let x=0;x<2**(z-3);x++)for(let y=0;y<2**(z-3);y++)
+    page[`${z}/${x}/${y}`]={...m.tiles['0/0/0']}
+  assert.equal(Object.keys(parseTerrainPage(page,m,'0/0')).length,5460)
+  delete page['9/63/63']
+  assert.throws(()=>parseTerrainPage(page,m,'0/0'))
+})
+
 test('dense global lunar terrain stays within the triangle and allocation limits and supplies ground sampling',async t=>{
   const m=manifest(1)
   Object.assign(m,{schema:2,sampleSize:129,noData:-32768,indexPages:{rootZoom:3,pages:{}},sourceResolutionMeters:118.4505876,verticalDatum:'Height above 1737400 m reference sphere'})

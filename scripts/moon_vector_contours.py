@@ -61,8 +61,11 @@ def smooth_coverage(polygons, width, height):
     raise ValueError('Smoothing could not preserve coverage')
 
 
-def polygon_path(polygon, x, y):
+def polygon_path(polygon, x, y, corners=None):
     def ring_path(ring):
+        if corners is not None:
+            from moon_vector_curves import curved_ring_path
+            return curved_ring_path(ring, x, y, corners)
         points = np.asarray(ring.coords[:-1]) - [x, y]
         return 'M' + 'L'.join(f'{a:.6f},{b:.6f}'.replace('.000000', '') for a, b in points) + 'Z'
     return ''.join(ring_path(ring) for ring in [polygon.exterior, *polygon.interiors])
@@ -99,10 +102,10 @@ def prepare_coverage(labels):
     return diagonal, smooth, classes, weight, changes
 
 
-def build_contours(labels, palette, baseline, output):
+def build_contours(labels, palette, baseline, output, cache_path=Path('.terrain-cache/moon-contour-coverage.npz')):
     height, width = labels.shape
     signature = hashlib.sha256(labels.tobytes()).hexdigest()
-    cache = Path('.terrain-cache/moon-contour-coverage.npz')
+    cache = Path(cache_path)
     if cache.exists() and str(np.load(cache, allow_pickle=True)['signature']) == signature:
         data = np.load(cache, allow_pickle=True)
         diagonal, smooth = shapely.from_wkb(data['diagonal']), shapely.from_wkb(data['smooth'])
@@ -128,6 +131,19 @@ def build_contours(labels, palette, baseline, output):
     point = min(candidates, key=lambda item: item[0])[1]
     preview = {'lat': float(90 - point[1] / height * 180), 'lon': float(point[0] / width * 360 - 180)}
     tile = baseline['tileSize']
+    from moon_vector_curves import fit_shared_corners
+    print('Fitting shared quadratic curves…', flush=True)
+    corners, curve_stats = fit_shared_corners(smooth, width, height, tile)
+    print(f"Accepted {curve_stats['curvedCorners']:,} protected shared curve corners", flush=True)
+    if corners:
+        # Center the review on the middle of an actual quadratic, not a long
+        # straight section between curves. The same viewpoint serves both modes.
+        controls = np.asarray(list(corners))
+        starts = np.asarray([pair[0] for pair in corners.values()])
+        ends = np.asarray([pair[1] for pair in corners.values()])
+        midpoints = .25 * starts + .5 * controls + .25 * ends
+        point = midpoints[np.argmin(np.linalg.norm(midpoints-target,axis=1))]
+        preview = {'lat': float(90-point[1]/height*180), 'lon': float(point[0]/width*360-180)}
     for name, coverage in [('10-diagonal', diagonal), ('10-smooth', smooth)]:
         folder = Path(output) / name
         folder.mkdir(parents=True, exist_ok=True)
@@ -137,13 +153,24 @@ def build_contours(labels, palette, baseline, output):
             for x in range(width // tile):
                 bounds = shapely.box(x * tile, y * tile, (x + 1) * tile, (y + 1) * tile)
                 paths = [''] * len(palette)
+                radii = [[] for _ in palette]
                 for index in sorted(tree.query(bounds)):
                     intersection = coverage[index].intersection(bounds)
                     for part in shapely.get_parts(intersection):
                         if part.geom_type == 'Polygon' and part.area > 1e-9:
-                            paths[classes[index]] += polygon_path(part, x * tile, y * tile)
+                            color = int(classes[index])
+                            paths[color] += polygon_path(part, x * tile, y * tile)
+                            if name == '10-smooth':
+                                for ring in [part.exterior, *part.interiors]:
+                                    for p in np.asarray(ring.coords[:-1]):
+                                        corner = corners.get(tuple(p))
+                                        radius = float(np.linalg.norm(corner[0] - p)) if corner is not None else 0.
+                                        radii[color].append(np.floor(radius * 1e6) / 1e6)
                 vertices += sum(p.count('L') + p.count('M') for p in paths)
-                data = json.dumps({'paths': paths}, separators=(',', ':')).encode()
+                content = {'paths': paths}
+                if name == '10-smooth':
+                    content['cornerRadii'] = radii
+                data = json.dumps(content, separators=(',', ':')).encode()
                 packed = gzip.compress(data, mtime=0)
                 filename = f'{x}-{y}.json.gz'
                 (folder / filename).write_bytes(packed)
@@ -165,6 +192,8 @@ def build_contours(labels, palette, baseline, output):
                     'simplificationAreaTolerance': .85,
                     'previewPoint': preview,
                     'smoothingWeight': weight if name == '10-smooth' else 0,
+                    'curveFit': curve_stats if name == '10-smooth' else None,
+                    'pathEncoding': 'shared-quadratic-radii-v1' if name == '10-smooth' else 'polygon-v1',
                     'changedAreaPixels': float(changes[0 if name == '10-diagonal' else 1])}
         (folder / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
         print(f'{name}: {vertices:,} vertices, {compressed/1e6:.2f} MB gzip; valid complete coverage', flush=True)

@@ -36,6 +36,7 @@ export default function App() {
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
   const [terrainShadows, setTerrainShadows] = useState(true)
+  const [terrainHillshade, setTerrainHillshade] = useState(true)
   const [showOrbits, setShowOrbits] = useState(true)
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -44,7 +45,7 @@ export default function App() {
   const [regionalStatuses, setRegionalStatuses] = useState<Partial<Record<'earth' | 'moon', RegionalMetrics>>>({})
   const regionalStatus = regionalStatuses[selected as 'earth' | 'moon']
   const [surfaceDetail, setSurfaceDetail] = useState(true)
-  const [moonColor, setMoonColor] = useState<MoonColorMode>('raster')
+  const [moonColor, setMoonColor] = useState<MoonColorMode>('10-smooth')
   const [moonColorStatus, setMoonColorStatus] = useState('')
   const moonColorRequest = useRef(0)
   const changeMoonColor = async (mode: MoonColorMode) => {
@@ -59,6 +60,23 @@ export default function App() {
       await sceneRef.current?.setMoonColor('raster')
       setMoonColor('raster')
       setMoonColorStatus('Vector colors unavailable · showing original image')
+    }
+  }
+  const [marsColor, setMarsColor] = useState<'raster' | '10-smooth'>('10-smooth')
+  const [marsColorStatus, setMarsColorStatus] = useState('')
+  const marsColorRequest = useRef(0)
+  const changeMarsColor = async (mode: 'raster' | '10-smooth') => {
+    const request = ++marsColorRequest.current
+    setMarsColor(mode)
+    setMarsColorStatus(mode === 'raster' ? '' : 'Loading MOC-WA vector colors…')
+    try {
+      const applied = await sceneRef.current?.setMarsColor(mode)
+      if (applied && request === marsColorRequest.current) setMarsColorStatus('')
+    } catch {
+      if (request !== marsColorRequest.current) return
+      await sceneRef.current?.setMarsColor('raster')
+      setMarsColor('raster')
+      setMarsColorStatus('MOC-WA colors unavailable · showing fallback image')
     }
   }
   const [terrainEnabled, setTerrainEnabled] = useState(true)
@@ -78,7 +96,11 @@ export default function App() {
         if (marker.visible) element.style.transform = `translate3d(${marker.x - 12}px, ${marker.y - 12}px, 0)`
       }
     }, status => setTerrainStatuses(previous => ({ ...previous, [status.body]: status })),
-      (id, metrics) => setRegionalStatuses(previous => ({ ...previous, [id]: metrics })))
+      (id, metrics) => setRegionalStatuses(previous => ({ ...previous, [id]: metrics })),
+      status => {
+        setMarsColorStatus(status)
+        if (status) setMarsColor('raster')
+      })
     explorer.setDate(dateRef.current)
     sceneRef.current = explorer
     // Explicitly opt-in diagnostic bridge for repeatable pilot browser tests.
@@ -198,7 +220,8 @@ export default function App() {
         <div className="info-stat"><span>POSITION</span><strong>{distanceLabel(selected, date)}</strong></div>
         {selected !== 'sun' && <div className="surface-source">Rotation: <a href={selected === 'earth' ? 'https://aa.usno.navy.mil/faq/GAST' : 'https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc'} target="_blank" rel="noreferrer">{selected === 'earth' ? 'USNO sidereal time' : 'JPL NAIF planetary constants'}</a> · approximate</div>}
         {textureSources[selected] && <div className="surface-source">Surface: <a href={textureSources[selected]!.page} target="_blank" rel="noreferrer">{textureSources[selected]!.label}</a> · {textureSources[selected]!.credit}</div>}
-        {selected !== 'earth' && selected !== 'moon' && selected in surfaceTileSources && <div className="surface-source">Detail: <a href={surfaceTileSources[selected as TileBody].page} target="_blank" rel="noreferrer">{surfaceTileSources[selected as TileBody].label}</a> · {surfaceTileSources[selected as TileBody].credit}</div>}
+        {selected === 'mars' && <div className="surface-source">Color: <a href="https://astrogeology.usgs.gov/search/map/mars_year_24_28_moc_wa_red_and_blue_2023" target="_blank" rel="noreferrer">MGS MOC-WA red/blue reflectance</a> · seasonal mean, green synthesized</div>}
+        {selected !== 'earth' && selected !== 'moon' && selected !== 'mars' && selected in surfaceTileSources && <div className="surface-source">Detail: <a href={surfaceTileSources[selected as TileBody].page} target="_blank" rel="noreferrer">{surfaceTileSources[selected as TileBody].label}</a> · {surfaceTileSources[selected as TileBody].credit}</div>}
         {(selected === 'earth' || selected === 'moon') && <div className="terrain-controls">
           <div className="surface-source">Explore measured terrain</div>
           <div role="status" className="surface-source">{!terrainEnabled ? 'Terrain off' : regionalStatus?.ready ? 'Measured terrain' : regionalStatus?.failed ? 'Regional detail unavailable · showing fallback' : regionalStatus?.requests ? 'Loading regional relief…' : selected === 'earth' ? 'Terrain loads as you explore' : terrainStatus.state === 'ready' ? 'Global LOLA terrain' : terrainStatus.state === 'unavailable' ? 'Lunar terrain unavailable · showing globe' : 'Loading global lunar terrain…'}</div>
@@ -208,7 +231,7 @@ export default function App() {
           {selected === 'moon' && moonColor.startsWith('10-') && <div className="terrain-options"><button disabled={!!moonColorStatus} onClick={() => sceneRef.current?.previewMoonBoundary()}>Boundary close-up</button></div>}
           {selected === 'moon' && moonColorStatus && <div role="status" className="surface-source">{moonColorStatus}</div>}
           {selected === 'moon' && moonColor !== 'raster' && <div className="surface-source">Experimental color regions traced from the original image.</div>}
-          {selected === 'moon' && moonColor === '10-smooth' && <div className="surface-source">Nearby color boundaries blend over about 300 m.</div>}
+          {selected === 'moon' && moonColor === '10-smooth' && <div className="surface-source">Curved regions with fixed ~300 m color transitions on the surface.</div>}
           {selected === 'moon' && surfaceDetail && <div className="surface-source">Fine surface detail uses generated normal and roughness textures.</div>}
           {selected === 'moon' && <div className="surface-source">The lunar surface uses smooth-shaded measured terrain.</div>}
           {selected === 'earth' && <div className="surface-source">Color: <a href={earthColorSource.page} target="_blank" rel="noreferrer">{earthColorSource.label}</a> · {regionalStatus?.imagery?.ready ? 'streamed imagery' : 'globe fallback'} · © ESA WorldCover / modified Copernicus Sentinel data 2021</div>}
@@ -217,11 +240,18 @@ export default function App() {
         {(isTerrainBody(selected) || selected === 'earth') && <div className="terrain-controls">
           <div className="terrain-options">
             <button aria-pressed={terrainEnabled} onClick={() => { sceneRef.current?.setTerrain(!terrainEnabled); setTerrainEnabled(!terrainEnabled) }}>Terrain {terrainEnabled ? 'on' : 'off'}</button>
+            {selected === 'mars' && <label>Mars color <select aria-label="Mars color" value={marsColor} onChange={e => { void changeMarsColor(e.target.value as 'raster' | '10-smooth') }}><option value="10-smooth">MOC-WA · 10 smooth</option><option value="raster">Fallback image</option></select></label>}
             {(selected === 'earth' || selected === 'moon') && <button aria-pressed={terrainShadows} disabled={!terrainEnabled} onClick={() => { sceneRef.current?.setTerrainShadows(!terrainShadows); setTerrainShadows(!terrainShadows) }}>Shadows {terrainShadows ? 'on' : 'off'}</button>}
+            {(selected === 'moon' || selected === 'mars') && <button aria-pressed={terrainHillshade} disabled={!terrainEnabled} onClick={() => { sceneRef.current?.setTerrainHillshade(!terrainHillshade); setTerrainHillshade(!terrainHillshade) }}>Hillshade {terrainHillshade ? 'on' : 'off'}</button>}
+            {selected === 'mars' && <button aria-pressed={surfaceDetail} onClick={() => { sceneRef.current?.setSurfaceDetail(!surfaceDetail); setSurfaceDetail(!surfaceDetail) }}>Surface detail {surfaceDetail ? 'on' : 'off'}</button>}
             <label>Relief <select aria-label="Terrain relief" value={terrainExaggeration} disabled={!terrainEnabled} onChange={e => { const value = Number(e.target.value); sceneRef.current?.setTerrainExaggeration(value); setTerrainExaggeration(value) }}><option value={1}>True scale</option><option value={4}>4× exaggerated</option></select></label>
           </div>
+          {(selected === 'moon' || selected === 'mars') && terrainHillshade && <div className="surface-source">DEM slope shading from a fixed northwest light; independent of sunlight direction.</div>}
+          {selected === 'mars' && marsColorStatus && <div role="status" className="surface-source">{marsColorStatus}</div>}
+          {selected === 'mars' && marsColor === '10-smooth' && <div className="surface-source">Four-year photometrically corrected MOC-WA mean; broad color regions, not fine surface detail.</div>}
+          {selected === 'mars' && surfaceDetail && <div className="surface-source">Fine surface detail uses generated normal and roughness textures.</div>}
           {selected !== 'earth' && !regionalStatus?.ready && <div role="status" className="surface-source">{terrainStatus.state === 'ready' ? (terrainStatus.failedTiles ? 'Terrain on · some detail unavailable' : `Measured relief · ${terrainStatus.source && terrainStatus.source.resolution < 1000 ? `${Math.round(terrainStatus.source.resolution)} m` : `${((terrainStatus.source?.resolution ?? 0) / 1000).toFixed(1)} km`} source grid`) : terrainStatus.state === 'unavailable' ? 'Terrain unavailable · showing imagery' : terrainStatus.state === 'off' ? 'Terrain off · showing imagery' : terrainStatus.failedTiles ? 'Terrain unavailable · retrying' : 'Loading terrain…'}</div>}
-          {terrainStatus.source && !regionalStatus?.ready && <div className="surface-source">Elevation: <a href={terrainStatus.source.url} target="_blank" rel="noreferrer">{terrainStatus.source.credit}</a></div>}
+          {terrainStatus.source && !regionalStatus?.ready && <div className="surface-source">Elevation: <a href={terrainStatus.source.url} target="_blank" rel="noreferrer">{terrainStatus.source.credit}</a>{terrainStatus.source.licenseUrl && <> · <a href={terrainStatus.source.licenseUrl} target="_blank" rel="noreferrer">License</a></>}</div>}
           {terrainStatus.source?.gaps && <div className="surface-source">Gray terrain marks gaps in elevation coverage.</div>}
           {terrainStatus.source?.approximate && <div className="surface-source">Heights above the Martian areoid, shown on a mean-radius sphere.</div>}
         </div>}

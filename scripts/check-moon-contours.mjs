@@ -47,7 +47,14 @@ try {
       const ctx = __vectorScene.moonVectorColor.texture.image.getContext('2d')
       return manifest.checkSamples.filter(([x,y,index]) => {
         const p = ctx.getImageData(x,y,1,1).data, hex = manifest.palette[index].slice(1)
-        return p[3] !== 255 || [0,1,2].some(i => p[i] !== parseInt(hex.slice(i*2,i*2+2),16))
+        return p[3] !== 255 || [0,1,2].some(i => {
+          let expected = parseInt(hex.slice(i*2,i*2+2),16)
+          if (mode === '10-smooth') {
+            const v=expected/255
+            expected=Math.round((v<=.04045?v/12.92:((v+.055)/1.055)**2.4)*255)
+          }
+          return p[i] !== expected
+        })
       })
     }, mode)
     assert.deepEqual(mismatches, [])
@@ -64,7 +71,7 @@ try {
       assert.ok(difference > .02, `Close redraw did not change GPU pixels: ${difference}`)
       const patch = await snapshot()
       assert.ok(patch.patch.ready)
-      assert.ok(patch.patch.patchBytes < 12 * 1048576)
+      assert.ok(patch.patch.patchBytes < 20 * 1048576)
       const texture = await page.evaluate(() => __vectorScene.surfaces.moon.vectorColorMap.value.image.toDataURL())
       await writeFile(resolve(output, `${mode}-patch.png`), Buffer.from(texture.split(',')[1], 'base64'))
       report.cases.push({ mode, difference, ...patch })

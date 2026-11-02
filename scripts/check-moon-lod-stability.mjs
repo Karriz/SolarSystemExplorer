@@ -45,7 +45,7 @@ try {
   }
   assert.equal(new Set(samples.map(s=>s.wanted)).size,1,'requested LOD changed while stationary')
   assert.equal(new Set(samples.map(s=>s.drawn)).size,1,'displayed LOD changed while stationary')
-  for(const sample of samples){assert.ok(sample.m.memoryBytes<=128*1048576);assert.ok(sample.m.triangles<=400000);assert.equal(sample.m.maxLevel,8,'close terrain must reach native measured resolution');assert.equal(sample.m.requests,0);assert.equal(sample.m.failed,0)}
+  for(const sample of samples){assert.ok(sample.m.memoryBytes<=128*1048576);assert.ok(sample.m.triangles<=400000);assert.equal(sample.m.maxLevel,sample.m.projection==='cube-sphere'?9:8,'close terrain must reach native measured resolution');assert.equal(sample.m.requests,0);assert.equal(sample.m.failed,0)}
   const spread=Math.max(...samples.flatMap(s=>s.camera.map((v,i)=>Math.abs(v-samples[0].camera[i]))))
   assert.ok(spread<1e-12,'camera moved during stability check')
   assert.ok(samples.every(s=>s.rotation.every((v,i)=>Math.abs(v-samples[0].rotation[i])<1e-12)),'camera rotated during stability check')
@@ -63,7 +63,8 @@ try {
    return points
   })
   assert.ok(nearby.length>0,'no nearby terrain was sampled')
-  for(const point of nearby){assert.equal(point.level,8,`coarse nearby tile ${point.key}`);assert.equal(point.size,129,`coarse nearby grid ${point.key}`)}
+  const cube=samples[0].m.projection==='cube-sphere'
+  for(const point of nearby){assert.equal(point.level,cube?9:8,`coarse nearby tile ${point.key}`);assert.equal(point.size,cube?33:129,`coarse nearby grid ${point.key}`)}
   await page.screenshot({path:resolve(output,name+'.png')})
   report.cases.push({name,samples,nearby,cameraSpread:spread});console.log(name,samples[0].m)
  }

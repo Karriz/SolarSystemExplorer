@@ -97,7 +97,7 @@ Tests cover camera safety and anchoring, imagery/tile mapping, numerical decodin
 
 `npm run terrain:build` prepares the versioned Moon, Mars, Mercury, and Venus baselines described in `scripts/terrain-sources.json`. It requires NumPy/Rasterio. `--offline` reuses cached sources. The Moon now uses one global LOLA LDEM_256 source; the earlier Hadley SLDEM overlay is retained as an optional preparation experiment and is not loaded by the app.
 
-The current catalog selects approximately 118 m LOLA LDEM_256 (Moon), 463 m MOLA (Mars), 665 m MESSENGER (Mercury), and 4.6 km-grid Magellan (Venus). Source pixel spacing is not effective resolution or guaranteed accuracy. Moon height tiles store a 129×129 grid through level 8 (approximately 166 m finest north–south mesh spacing); other global bodies retain 65×65 grids. These are sampled rendering grids with boundary skirts, parent retention, four concurrent requests, and an estimated 48 MiB terrain allocation budget. Worker decoding checks hashes and lengths. Regional layers have a separate 48 MiB estimated terrain budget and a 32-visible-leaf limit; Earth color adds a separate 32 MiB estimate; that separation is exposed in pilot measurements rather than presented as one combined memory limit.
+The current catalog selects approximately 118 m LOLA LDEM_256 (Moon), 200 m MOLA–HRSC v2 (Mars), 665 m MESSENGER (Mercury), and 4.6 km-grid Magellan (Venus). Source pixel spacing is not effective resolution or guaranteed accuracy. Moon height tiles store a 129×129 grid through level 8; Mars uses 129×129 through level 9, approximately 163 m finest north–south delivery spacing. Mercury and Venus retain 65×65 grids. Moon and Mars render six cube-sphere trees with 33×33 meshes, source-derived normals, boundary skirts and parent retention. Their renderer keeps an estimated 128 MiB allocation budget per active body, including a numeric height cache bounded at 64 MiB and adjusted to leave room for metadata and geometry, and stays below 400,000 visible triangles. Worker decoding checks hashes and lengths. Regional layers have a separate 48 MiB estimated terrain budget; Earth color adds a separate 32 MiB estimate. These counters exclude total browser/driver overhead.
 
 Prepare the whole-Moon source and release:
 
@@ -108,7 +108,19 @@ npm run terrain:test-pipeline
 npm run terrain:validate -- public/terrain/moon/<release>/manifest.json
 ```
 
-The four official LOLA quadrants total 8.49 GB. They are pinned by SHA-256 and fetched in checked, resumable byte ranges into `.terrain-cache/moon-global/sources`. The build caches a normalized Float32 raster (16.99 GB), checkpoints completed tile columns, validates the release, and only then changes the terrain catalog. Validation uses a bounded tile cache rather than retaining the full pyramid in RAM. Moon rendering uses 65×65 context meshes and 129×129 meshes at the finest level, with a 48-leaf selection cap, a 400,000-triangle cap, and the existing 48 MiB estimated terrain budget. Polar convergence can exhaust the triangle budget before reaching the finest level. `terrainPilot.metrics().global.moon` exposes the global counters for browser checks.
+The four official LOLA quadrants total 8.49 GB. They are pinned by SHA-256 and fetched in checked, resumable byte ranges into `.terrain-cache/moon-global/sources`. The build caches a normalized Float32 raster (16.99 GB), checkpoints completed tile columns, validates the release, and only then changes the terrain catalog. Validation uses a bounded tile cache rather than retaining the full pyramid in RAM. Moon and Mars use a shared cube-sphere renderer with a 126-leaf selection cap. `terrainPilot.metrics().global.moon` and `.mars` expose projection, visible terrain, source-data levels and allocation counters for browser checks.
+
+Prepare the global 200 m Mars source and release:
+
+```sh
+npm run mars:fetch-terrain
+npm run mars:build-terrain
+npm run mars:test-pipeline
+npm run mars:check-source-samples
+npm run mars:check-terrain-upgrade
+```
+
+The official USGS MOLA–HRSC v2 GeoTIFF is 11.38 GB, with an approximately 22.77 GB normalized working raster. The downloader resumes checked HTTP ranges and verifies a pinned SHA-256. The builder preserves the actual geographic pixel transform, areoid height reference, source attribution and HRSC CC BY-SA 3.0 IGO terms. It interpolates the narrow NoData stripe in the final longitude column between adjacent measured samples across the dateline, recording that processing in the release; other NoData remains explicit. The catalog changes only after full tile integrity, seam, pole and parent-alignment validation. This v2 source incorporates HRSC over 44% of Mars; other areas retain interpolated MOLA, and the source has documented localized blending artifacts.
 
 The Moon's current CGI Moon Kit texture is intentionally retained. The proposed global Kaguya MI 750 nm/237 m reflectance replacement is pending: the catalog entry remains, but its exact original global raster was not available from the checked official download services. The available ±65° regional dataset has not been substituted.
 

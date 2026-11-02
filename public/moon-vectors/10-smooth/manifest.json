@@ -183,8 +183,8 @@
   "minRegionPixels": 12,
   "polygons": 35904,
   "vertices": 1571902,
-  "payloadBytes": 29413405,
-  "compressedBytes": 6169513,
+  "payloadBytes": 41775683,
+  "compressedBytes": 7545249,
   "checkSamples": [
     [
       1,
@@ -1966,9 +1966,18 @@
   "coverageValid": true,
   "simplificationAreaTolerance": 0.85,
   "previewPoint": {
-    "lat": 26.103515625,
-    "lon": 3.7353515625
+    "lat": 26.052699009056873,
+    "lon": 3.6724766433788716
   },
   "smoothingWeight": 0.2,
+  "curveFit": {
+    "degreeTwoCorners": 723445,
+    "tileSafeCandidates": 714943,
+    "curvedCorners": 714942,
+    "maxTrimPixels": 0.65,
+    "trimFraction": 0.35,
+    "protectedOverlaps": 0
+  },
+  "pathEncoding": "shared-quadratic-radii-v1",
   "changedAreaPixels": 466161.2924390262
 }

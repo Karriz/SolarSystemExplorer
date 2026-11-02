@@ -1781,9 +1781,11 @@
   "coverageValid": true,
   "simplificationAreaTolerance": 0.85,
   "previewPoint": {
-    "lat": 26.103515625,
-    "lon": 3.7353515625
+    "lat": 26.052699009056873,
+    "lon": 3.6724766433788716
   },
   "smoothingWeight": 0,
+  "curveFit": null,
+  "pathEncoding": "polygon-v1",
   "changedAreaPixels": 127279.63333333316
 }
