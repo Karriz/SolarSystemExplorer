@@ -9,6 +9,7 @@ import { isTerrainBody, type TerrainBody } from './terrain'
 import type { RegionalMetrics } from './RegionalTerrainLayer'
 import { earthColorSource } from './earthImagery'
 import { pilotLocations } from './terrainPilot'
+import type { MoonColorMode } from './MoonVectorColor'
 
 const AU_KM = 149_597_870.7
 const DAY_MS = 86_400_000
@@ -43,6 +44,23 @@ export default function App() {
   const [regionalStatuses, setRegionalStatuses] = useState<Partial<Record<'earth' | 'moon', RegionalMetrics>>>({})
   const regionalStatus = regionalStatuses[selected as 'earth' | 'moon']
   const [surfaceDetail, setSurfaceDetail] = useState(true)
+  const [moonColor, setMoonColor] = useState<MoonColorMode>('raster')
+  const [moonColorStatus, setMoonColorStatus] = useState('')
+  const moonColorRequest = useRef(0)
+  const changeMoonColor = async (mode: MoonColorMode) => {
+    const request = ++moonColorRequest.current
+    setMoonColor(mode)
+    setMoonColorStatus(mode === 'raster' ? '' : 'Loading vector colors…')
+    try {
+      const applied = await sceneRef.current?.setMoonColor(mode)
+      if (applied && request === moonColorRequest.current) setMoonColorStatus('')
+    } catch {
+      if (request !== moonColorRequest.current) return
+      await sceneRef.current?.setMoonColor('raster')
+      setMoonColor('raster')
+      setMoonColorStatus('Vector colors unavailable · showing original image')
+    }
+  }
   const [terrainEnabled, setTerrainEnabled] = useState(true)
   const [terrainExaggeration, setTerrainExaggeration] = useState(1)
   const [terrainStatuses, setTerrainStatuses] = useState<Partial<Record<TerrainBody, TerrainStatus>>>({})
@@ -186,6 +204,11 @@ export default function App() {
           <div role="status" className="surface-source">{!terrainEnabled ? 'Terrain off' : regionalStatus?.ready ? 'Measured terrain' : regionalStatus?.failed ? 'Regional detail unavailable · showing fallback' : regionalStatus?.requests ? 'Loading regional relief…' : selected === 'earth' ? 'Terrain loads as you explore' : terrainStatus.state === 'ready' ? 'Global LOLA terrain' : terrainStatus.state === 'unavailable' ? 'Lunar terrain unavailable · showing globe' : 'Loading global lunar terrain…'}</div>
           <div className="terrain-options pilot-places">{pilotLocations.filter(p => p.body === selected).map(p => <button key={p.id} onClick={() => sceneRef.current?.pilot(p.id)}>{p.name}</button>)}</div>
           {selected === 'moon' && <div className="terrain-options"><button aria-pressed={surfaceDetail} onClick={() => { sceneRef.current?.setSurfaceDetail(!surfaceDetail); setSurfaceDetail(!surfaceDetail) }}>Surface detail {surfaceDetail ? 'on' : 'off'}</button></div>}
+          {selected === 'moon' && <div className="terrain-options"><label>Moon color <select aria-label="Moon color" value={moonColor} onChange={e => { void changeMoonColor(e.target.value as MoonColorMode) }}><option value="raster">Original image</option><option value="6">Vector · 6 colors</option><option value="10">Vector · 10 colors</option><option value="16">Vector · 16 colors</option><option value="10-diagonal">10 · Diagonal</option><option value="10-smooth">10 · Smoothed</option></select></label></div>}
+          {selected === 'moon' && moonColor.startsWith('10-') && <div className="terrain-options"><button disabled={!!moonColorStatus} onClick={() => sceneRef.current?.previewMoonBoundary()}>Boundary close-up</button></div>}
+          {selected === 'moon' && moonColorStatus && <div role="status" className="surface-source">{moonColorStatus}</div>}
+          {selected === 'moon' && moonColor !== 'raster' && <div className="surface-source">Experimental color regions traced from the original image.</div>}
+          {selected === 'moon' && moonColor === '10-smooth' && <div className="surface-source">Nearby color boundaries blend over about 300 m.</div>}
           {selected === 'moon' && surfaceDetail && <div className="surface-source">Fine surface detail uses generated normal and roughness textures.</div>}
           {selected === 'moon' && <div className="surface-source">The lunar surface uses smooth-shaded measured terrain.</div>}
           {selected === 'earth' && <div className="surface-source">Color: <a href={earthColorSource.page} target="_blank" rel="noreferrer">{earthColorSource.label}</a> · {regionalStatus?.imagery?.ready ? 'streamed imagery' : 'globe fallback'} · © ESA WorldCover / modified Copernicus Sentinel data 2021</div>}

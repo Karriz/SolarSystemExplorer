@@ -4,6 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "moon:check-soft-boundaries": "node scripts/check-moon-soft-boundaries.mjs",
+    "moon:build-contours": "sh scripts/terrain-python.sh scripts/build-moon-vectors.py --colors 10 --contours",
+    "moon:test-contours": "sh scripts/terrain-python.sh scripts/test-moon-contours.py",
+    "moon:check-contours": "node scripts/check-moon-contours.mjs",
+    "moon:build-vectors": "sh scripts/terrain-python.sh scripts/build-moon-vectors.py",
+    "moon:check-vectors": "node scripts/check-moon-vectors.mjs",
     "terrain:check-moon-stability": "node scripts/check-moon-lod-stability.mjs",
     "terrain:check-moon": "node scripts/check-moon-global.mjs",
     "terrain:fetch-moon": "python3 scripts/fetch-moon-global.py",

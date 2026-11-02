@@ -59,6 +59,24 @@ function moonColorSharpenChunk() {
           moonDelta = clamp(moonDelta, -moonLimit, moonLimit);
           moonColor.rgb = clamp(moonCenter + moonDelta * (${glslFloat(strength)} * moonSharp), 0.0, 1.0);
         }
+        if (moonVectorReady > 0.5) {
+          vec2 ll = surfaceLonLat();
+          float centerLon = (moonVectorBounds.x + moonVectorBounds.z) * 0.5;
+          float localLon = mod(ll.x - centerLon + 180.0, 360.0) - 180.0;
+          vec2 patchUv = vec2(0.5 + localLon / (moonVectorBounds.z - moonVectorBounds.x),
+            (ll.y - moonVectorBounds.y) / (moonVectorBounds.w - moonVectorBounds.y));
+          vec2 edge = min(patchUv, 1.0 - patchUv);
+          float weight = smoothstep(0.0, 0.08, min(edge.x, edge.y));
+          weight *= 1.0 - smoothstep(78.0, 80.0, abs(ll.y));
+          vec2 safePatchUv = clamp(patchUv, 0.0, 1.0);
+          vec3 patchColor = texture2D(moonVectorMap, safePatchUv).rgb;
+          if (moonVectorSoftReady > 0.5) {
+            vec3 softColor = texture2D(moonVectorSoftMap, safePatchUv).rgb;
+            float boundaryBlend = 1.0 - smoothstep(2500.0, 20000.0, length(vMoonViewMeters));
+            patchColor = mix(patchColor, softColor, boundaryBlend);
+          }
+          moonColor.rgb = mix(moonColor.rgb, patchColor, weight);
+        }
         diffuseColor *= moonColor;
         #endif`
 }
@@ -77,13 +95,16 @@ export function configureMoonSurfaceMaterial(material: THREE.Material, state: Su
     })
     const shaded = shader.fragmentShader.includes('#include <normal_fragment_maps>')
     if (shaded) Object.assign(shader.uniforms, { moonDetailMap: state.detailMap, moonDetailReady: state.detailMapReady,
-      moonMediumMap: state.mediumDetailMap, moonMediumReady: state.mediumDetailReady, moonColorSharpen: state.colorSharpen })
+      moonMediumMap: state.mediumDetailMap, moonMediumReady: state.mediumDetailReady, moonColorSharpen: state.colorSharpen,
+      moonVectorMap: state.vectorColorMap, moonVectorBounds: state.vectorColorBounds, moonVectorReady: state.vectorColorReady,
+      moonVectorSoftMap: state.vectorColorSoftMap, moonVectorSoftReady: state.vectorColorSoftReady })
     if (clip) Object.assign(shader.uniforms, { surfaceClips: state.clips, surfaceClipCount: state.clipCount })
-    shader.vertexShader = `varying float vMoonFade; varying float vMoonMediumFade; varying vec3 vMoonDir; uniform vec3 moonCamera; uniform vec3 moonOrigin; uniform float moonMetersPerUnit; uniform float moonDetail;
+    shader.vertexShader = `varying float vMoonFade; varying float vMoonMediumFade; varying vec3 vMoonViewMeters; varying vec3 vMoonDir; uniform vec3 moonCamera; uniform vec3 moonOrigin; uniform float moonMetersPerUnit; uniform float moonDetail;
       ${shader.vertexShader}`
     shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
       vec3 moonPlaced = position + moonOrigin;
       float moonMeters = distance(moonPlaced, moonCamera) * moonMetersPerUnit;
+      vMoonViewMeters = (moonPlaced - moonCamera) * moonMetersPerUnit;
       vMoonFade = 0.0;
       vMoonMediumFade = 0.0;
       if (moonDetail > 0.0 && moonMeters > 0.0 && moonMeters < 1.0e8) {
@@ -92,7 +113,7 @@ export function configureMoonSurfaceMaterial(material: THREE.Material, state: Su
       }
       float moonLen2 = dot(moonPlaced, moonPlaced);
       vMoonDir = moonLen2 > 1.0e-20 ? moonPlaced * inversesqrt(moonLen2) : vec3(0.0, 1.0, 0.0);`)
-    shader.fragmentShader = `varying float vMoonFade; varying float vMoonMediumFade; varying vec3 vMoonDir;
+    shader.fragmentShader = `varying float vMoonFade; varying float vMoonMediumFade; varying vec3 vMoonViewMeters; varying vec3 vMoonDir;
       ${clip ? `uniform vec4 surfaceClips[${MAX_SURFACE_CLIPS}]; uniform int surfaceClipCount;` : ''}
       vec2 surfaceLonLat() { vec3 p = normalize(vMoonDir); return vec2(atan(-p.z, p.x), asin(clamp(p.y, -1.0, 1.0))) * 57.295779513; }
       bool surfaceInside(vec2 p, vec4 b) { return p.x >= b.x && p.x <= b.z && p.y >= b.y && p.y <= b.w; }
@@ -104,7 +125,9 @@ export function configureMoonSurfaceMaterial(material: THREE.Material, state: Su
       shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', moonColorSharpenChunk())
     }
     if (shaded) {
-      shader.fragmentShader = `uniform sampler2D moonDetailMap; uniform float moonDetailReady;
+      shader.fragmentShader = `uniform sampler2D moonVectorMap; uniform vec4 moonVectorBounds; uniform float moonVectorReady;
+        uniform sampler2D moonVectorSoftMap; uniform float moonVectorSoftReady;
+        uniform sampler2D moonDetailMap; uniform float moonDetailReady;
         uniform sampler2D moonMediumMap; uniform float moonMediumReady;
         uniform float moonColorSharpen;
         #ifndef OBJECTSPACE_NORMALMAP
@@ -157,7 +180,7 @@ export function configureMoonSurfaceMaterial(material: THREE.Material, state: Su
         }`)
     }
   }
-  material.customProgramCacheKey = () => `${previousKey}/moon-normal-texture-v3/${clip ? 'clip' : 'open'}`
+  material.customProgramCacheKey = () => `${previousKey}/moon-normal-texture-v5/${clip ? 'clip' : 'open'}`
   configureTerrainShadowFade(material)
   return shade
 }

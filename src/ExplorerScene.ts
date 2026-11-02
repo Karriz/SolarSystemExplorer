@@ -13,6 +13,7 @@ import { configureSurfaceMaterial, surfaceState } from './surfaceMaterial'
 import { configureMoonSurfaceMaterial, type MoonShade } from './moonSurfaceMaterial'
 import { geoDirection, pilotLocations } from './terrainPilot'
 import { fitTerrainShadow } from './terrainShadows'
+import { MoonVectorColor, type MoonColorMode } from './MoonVectorColor'
 
 export type ScreenMarker = { id: BodyId; x: number; y: number; visible: boolean }
 const DAY_MS = 86400000
@@ -111,6 +112,9 @@ export class ExplorerScene {
   private planetOrbitDate = 0
   private saturnRings: THREE.Group | null = null
   private textureLoader = new THREE.TextureLoader()
+  private moonVectorColor = new MoonVectorColor()
+  private moonRasterColor?: THREE.Texture
+  private moonColorMode: MoonColorMode = 'raster'
   private disposed = false
   private surfaceTiles: GlobeTileLayer
   private terrain = new Map<TerrainBody, GlobeTerrainLayer>()
@@ -157,6 +161,7 @@ export class ExplorerScene {
     this.scene.add(this.stars)
     this.surfaces.earth.detail.value = 0
     this.createBodies()
+    this.moonRasterColor = (this.bodies.get('moon')!.material as THREE.MeshStandardMaterial).map ?? undefined
     for (const layer of [
       { file: 'moon-detail.png', map: this.surfaces.moon.detailMap, ready: this.surfaces.moon.detailMapReady },
       { file: 'moon-medium-detail.png', map: this.surfaces.moon.mediumDetailMap, ready: this.surfaces.moon.mediumDetailReady },
@@ -231,7 +236,13 @@ export class ExplorerScene {
       // SphereGeometry's default UVs put west of 0° at u < 0.5 for our
       // right-handed scene. These NASA maps must not be flipped horizontally.
       const material = this.bodies.get(id)!.material as THREE.MeshStandardMaterial
-      material.map?.dispose()
+      if (id === 'moon') {
+        this.moonRasterColor?.dispose()
+        this.moonRasterColor = texture
+        // A palette can finish loading before the original JPEG arrives.
+        if (this.moonColorMode !== 'raster') return
+      }
+      if (id !== 'moon') material.map?.dispose()
       material.map = texture
       if (id === 'earth') {
         // The satellite composite's deep oceans are nearly black. Lift only blue
@@ -345,6 +356,32 @@ export class ExplorerScene {
   private terrainShadows = true
   setTerrainShadows(enabled: boolean) { this.terrainShadows = enabled }
   setSurfaceDetail(enabled: boolean) { this.surfaces.moon.detail.value = enabled ? 1 : 0 }
+  previewMoonBoundary() {
+    const point = this.moonVectorColor.previewPoint()
+    if (point) this.surfaceLocation('moon', point.lat, point.lon, 12000)
+  }
+  async setMoonColor(mode: MoonColorMode): Promise<boolean> {
+    const material = this.bodies.get('moon')!.material as THREE.MeshStandardMaterial
+    if (mode === 'raster') {
+      this.moonVectorColor.cancel()
+      material.map = this.moonRasterColor ?? material.map
+      material.emissiveMap = material.map
+      material.needsUpdate = true
+      this.moonVectorColor.replace()
+      this.moonColorMode = mode
+      this.surfaces.moon.colorSharpen.value = 1
+      return true
+    }
+    const texture = await this.moonVectorColor.load(mode)
+    if (!texture) return false
+    material.map = texture
+    material.emissiveMap = texture
+    material.needsUpdate = true
+    this.moonVectorColor.replace(texture)
+    this.moonColorMode = mode
+    this.surfaces.moon.colorSharpen.value = 0
+    return true
+  }
   pilot(id: string, altitude?: number) {
     const location = pilotLocations.find(p => p.id === id)
     if (!location) return
@@ -495,6 +532,8 @@ export class ExplorerScene {
       moonBody.updateWorldMatrix(true, false)
       this.moonShade.camera.value.copy(moonBody.worldToLocal(this.camera.position.clone()))
     }
+    if (moonBody) this.moonVectorColor.updateView(this.camera, moonBody, this.surfaces.moon,
+      this.selected === 'moon', this.hitGround, now)
     this.surfaceTiles.update(this.camera, viewportHeight, now, this.selected === 'moon' ? 'moon' : this.selected === 'earth' && this.surfaces.earth.clipCount.value > 0 ? 'earth' : terrainBody)
     const closeTerrain = this.selected === 'moon' ? !!this.terrain.get('moon')?.active
       : !!this.regional.get(this.selected as 'earth' | 'moon')?.metrics().ready
@@ -545,6 +584,8 @@ export class ExplorerScene {
 
   dispose() {
     this.disposed = true
+    this.moonVectorColor.dispose()
+    this.moonRasterColor?.dispose()
     cancelAnimationFrame(this.frame)
     this.resizeObserver.disconnect()
     this.controls.dispose()

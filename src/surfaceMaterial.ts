@@ -10,13 +10,16 @@ export type SurfaceState = {
   classification: { value: THREE.Texture | null }; classBounds: { value: THREE.Vector4 }; hasClassification: { value: number }
   /** 1 applies the Moon's adaptive color sharpen; 0 keeps the hardware texture filter. */
   colorSharpen: { value: number }
+  vectorColorMap: { value: THREE.Texture | null }; vectorColorBounds: { value: THREE.Vector4 }; vectorColorReady: { value: number }
+  vectorColorSoftMap: { value: THREE.Texture | null }; vectorColorSoftReady: { value: number }
 }
 export function surfaceState(): SurfaceState {
   return { detail: { value: 1 }, detailMap: { value: null }, detailMapReady: { value: 0 },
     mediumDetailMap: { value: null }, mediumDetailReady: { value: 0 },
     clips: { value: Array.from({ length: MAX_SURFACE_CLIPS }, () => new THREE.Vector4()) }, clipCount: { value: 0 },
     classification: { value: null }, classBounds: { value: new THREE.Vector4() }, hasClassification: { value: 0 },
-    colorSharpen: { value: 1 } }
+    colorSharpen: { value: 1 }, vectorColorMap: { value: null }, vectorColorBounds: { value: new THREE.Vector4() }, vectorColorReady: { value: 0 },
+    vectorColorSoftMap: { value: null }, vectorColorSoftReady: { value: 0 } }
 }
 
 /** Shared body-fixed detail, with stable regional mean color. Coverage clipping
