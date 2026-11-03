@@ -7,9 +7,10 @@ import { surfaceTileSources, type TileBody } from './surfaceTiles'
 import type { TerrainStatus } from './GlobeTerrainLayer'
 import { isTerrainBody, type TerrainBody } from './terrain'
 import type { RegionalMetrics } from './RegionalTerrainLayer'
-import { earthColorSource } from './earthImagery'
+import { earthRenderProfile } from './EarthSurfaceRenderer'
 import { pilotLocations } from './terrainPilot'
-import type { MoonColorMode } from './MoonVectorColor'
+import type { SurfaceColorStatus } from './PlanetSurfaceRenderer'
+import { isSolidSurfaceBody, planetRenderProfiles, type SolidSurfaceBody } from './planetRenderProfiles'
 
 const AU_KM = 149_597_870.7
 const DAY_MS = 86_400_000
@@ -35,8 +36,6 @@ export default function App() {
   const [selected, setSelected] = useState<BodyId>('sun')
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
-  const [terrainShadows, setTerrainShadows] = useState(true)
-  const [terrainHillshade, setTerrainHillshade] = useState(true)
   const [showOrbits, setShowOrbits] = useState(true)
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -44,43 +43,15 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [regionalStatuses, setRegionalStatuses] = useState<Partial<Record<'earth' | 'moon', RegionalMetrics>>>({})
   const regionalStatus = regionalStatuses[selected as 'earth' | 'moon']
-  const [surfaceDetail, setSurfaceDetail] = useState(true)
-  const [moonColor, setMoonColor] = useState<MoonColorMode>('10-smooth')
-  const [moonColorStatus, setMoonColorStatus] = useState('')
-  const moonColorRequest = useRef(0)
-  const changeMoonColor = async (mode: MoonColorMode) => {
-    const request = ++moonColorRequest.current
-    setMoonColor(mode)
-    setMoonColorStatus(mode === 'raster' ? '' : 'Loading vector colors…')
-    try {
-      const applied = await sceneRef.current?.setMoonColor(mode)
-      if (applied && request === moonColorRequest.current) setMoonColorStatus('')
-    } catch {
-      if (request !== moonColorRequest.current) return
-      await sceneRef.current?.setMoonColor('raster')
-      setMoonColor('raster')
-      setMoonColorStatus('Vector colors unavailable · showing original image')
-    }
-  }
-  const [marsColor, setMarsColor] = useState<'raster' | '10-smooth'>('10-smooth')
-  const [marsColorStatus, setMarsColorStatus] = useState('')
-  const marsColorRequest = useRef(0)
-  const changeMarsColor = async (mode: 'raster' | '10-smooth') => {
-    const request = ++marsColorRequest.current
-    setMarsColor(mode)
-    setMarsColorStatus(mode === 'raster' ? '' : 'Loading MOC-WA vector colors…')
-    try {
-      const applied = await sceneRef.current?.setMarsColor(mode)
-      if (applied && request === marsColorRequest.current) setMarsColorStatus('')
-    } catch {
-      if (request !== marsColorRequest.current) return
-      await sceneRef.current?.setMarsColor('raster')
-      setMarsColor('raster')
-      setMarsColorStatus('MOC-WA colors unavailable · showing fallback image')
-    }
-  }
-  const [terrainEnabled, setTerrainEnabled] = useState(true)
-  const [terrainExaggeration, setTerrainExaggeration] = useState(1)
+  const [surfaceColorStatuses, setSurfaceColorStatuses] = useState<Partial<Record<SolidSurfaceBody, SurfaceColorStatus>>>({})
+  const surfaceProfile = isSolidSurfaceBody(selected) ? planetRenderProfiles[selected] : undefined
+  const surfaceColorStatus = isSolidSurfaceBody(selected) ? surfaceColorStatuses[selected] : undefined
+  const [terrainSettings, setTerrainSettings] = useState<Partial<Record<BodyId, { enabled: boolean; exaggeration: number; shadows: boolean }>>>({})
+  const currentTerrainSettings = terrainSettings[selected] ?? { enabled: true, exaggeration: 1, shadows: true }
+  const { enabled: terrainEnabled, exaggeration: terrainExaggeration, shadows: terrainShadows } = currentTerrainSettings
+  const setTerrainSetting = (patch: Partial<typeof currentTerrainSettings>) => setTerrainSettings(previous => ({
+    ...previous, [selected]: { ...currentTerrainSettings, ...patch },
+  }))
   const [terrainStatuses, setTerrainStatuses] = useState<Partial<Record<TerrainBody, TerrainStatus>>>({})
   const terrainStatus: TerrainStatus = terrainStatuses[selected as TerrainBody] ?? { body: isTerrainBody(selected) ? selected : 'moon', state: 'loading', loadedTiles: 0, failedTiles: 0 }
   const selectedInfo = bodyInfo[selected]
@@ -97,16 +68,13 @@ export default function App() {
       }
     }, status => setTerrainStatuses(previous => ({ ...previous, [status.body]: status })),
       (id, metrics) => setRegionalStatuses(previous => ({ ...previous, [id]: metrics })),
-      status => {
-        setMarsColorStatus(status)
-        if (status) setMarsColor('raster')
-      })
+      (body, status) => setSurfaceColorStatuses(previous => ({ ...previous, [body]: status })))
     explorer.setDate(dateRef.current)
     sceneRef.current = explorer
     // Explicitly opt-in diagnostic bridge for repeatable pilot browser tests.
     if (new URLSearchParams(location.search).has('terrainPilot')) {
-      Object.assign(window, { terrainPilot: { location: (body: 'earth' | 'moon', lat: number, lon: number, altitude?: number) => { explorer.surfaceLocation(body, lat, lon, altitude); setSelected(body) }, point: (lat: number, lon: number, altitude?: number) => { explorer.surfaceLocation('earth', lat, lon, altitude); setSelected('earth') }, visit: (id: string, altitude?: number) => { explorer.pilot(id, altitude); const p = pilotLocations.find(p => p.id === id); if (p) setSelected(p.body) },
-        sample: () => explorer.pilotImageSample(), metrics: () => explorer.pilotMetrics(), date: (iso: string) => { const next = new Date(iso); if (!Number.isNaN(next.getTime())) { explorer.setDate(next); dateRef.current = next; setDate(next) } }, detail: (enabled: boolean) => { explorer.setSurfaceDetail(enabled); setSurfaceDetail(enabled) } } })
+      Object.assign(window, { terrainPilot: { location: (body: BodyId, lat: number, lon: number, altitude?: number) => { explorer.surfaceLocation(body, lat, lon, altitude); setSelected(body) }, point: (lat: number, lon: number, altitude?: number) => { explorer.surfaceLocation('earth', lat, lon, altitude); setSelected('earth') }, visit: (id: string, altitude?: number) => { explorer.pilot(id, altitude); const p = pilotLocations.find(p => p.id === id); if (p) setSelected(p.body) },
+        sample: () => explorer.pilotImageSample(), metrics: () => explorer.pilotMetrics(), date: (iso: string) => { const next = new Date(iso); if (!Number.isNaN(next.getTime())) { explorer.setDate(next); dateRef.current = next; setDate(next) } }, detail: (enabled: boolean) => { explorer.setSurfaceDetail(enabled) } } })
     }
     const markerLayer = markerLayerRef.current
     const forwardWheel = (event: WheelEvent) => {
@@ -219,40 +187,33 @@ export default function App() {
         <div className="info-stat"><span>MEAN RADIUS</span><strong>{Math.round(selectedInfo.radiusKm).toLocaleString()} km</strong></div>
         <div className="info-stat"><span>POSITION</span><strong>{distanceLabel(selected, date)}</strong></div>
         {selected !== 'sun' && <div className="surface-source">Rotation: <a href={selected === 'earth' ? 'https://aa.usno.navy.mil/faq/GAST' : 'https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc'} target="_blank" rel="noreferrer">{selected === 'earth' ? 'USNO sidereal time' : 'JPL NAIF planetary constants'}</a> · approximate</div>}
-        {textureSources[selected] && <div className="surface-source">Surface: <a href={textureSources[selected]!.page} target="_blank" rel="noreferrer">{textureSources[selected]!.label}</a> · {textureSources[selected]!.credit}</div>}
-        {selected === 'mars' && <div className="surface-source">Color: <a href="https://astrogeology.usgs.gov/search/map/mars_year_24_28_moc_wa_red_and_blue_2023" target="_blank" rel="noreferrer">MGS MOC-WA red/blue reflectance</a> · seasonal mean, green synthesized</div>}
-        {selected !== 'earth' && selected !== 'moon' && selected !== 'mars' && selected in surfaceTileSources && <div className="surface-source">Detail: <a href={surfaceTileSources[selected as TileBody].page} target="_blank" rel="noreferrer">{surfaceTileSources[selected as TileBody].label}</a> · {surfaceTileSources[selected as TileBody].credit}</div>}
-        {(selected === 'earth' || selected === 'moon') && <div className="terrain-controls">
+        {textureSources[selected] && !surfaceProfile && <div className="surface-source">Surface: <a href={textureSources[selected]!.page} target="_blank" rel="noreferrer">{textureSources[selected]!.label}</a> · {textureSources[selected]!.credit}</div>}
+        {surfaceProfile && <>
+          {surfaceColorStatus?.mode !== 'unavailable' && <div className="surface-source">Color: <a href={surfaceColorStatus?.mode === 'original' && !('fallbackColor' in surfaceProfile) ? textureSources[selected]!.page : surfaceProfile.colorSource.url} target="_blank" rel="noreferrer">{surfaceColorStatus?.mode === 'original' && !('fallbackColor' in surfaceProfile) ? textureSources[selected]!.label : surfaceProfile.colorSource.label}</a> · {surfaceColorStatus?.mode === 'original' && !('fallbackColor' in surfaceProfile) ? textureSources[selected]!.credit : surfaceProfile.colorSource.credit}</div>}
+          {(!surfaceColorStatus || surfaceColorStatus.mode === 'compact' || ('fallbackColor' in surfaceProfile && surfaceColorStatus.mode === 'original')) && <div className="surface-source">{surfaceProfile.colorDescription}</div>}
+          {surfaceColorStatus?.message && <div role="status" className="surface-source">{surfaceColorStatus.message}</div>}
+        </>}
+        {selected !== 'earth' && !surfaceProfile && selected in surfaceTileSources && <div className="surface-source">Detail: <a href={surfaceTileSources[selected as TileBody].page} target="_blank" rel="noreferrer">{surfaceTileSources[selected as TileBody].label}</a> · {surfaceTileSources[selected as TileBody].credit}</div>}
+        {selected === 'earth' && <div className="terrain-controls">
           <div className="surface-source">Explore measured terrain</div>
-          <div role="status" className="surface-source">{!terrainEnabled ? 'Terrain off' : regionalStatus?.ready ? 'Measured terrain' : regionalStatus?.failed ? 'Regional detail unavailable · showing fallback' : regionalStatus?.requests ? 'Loading regional relief…' : selected === 'earth' ? 'Terrain loads as you explore' : terrainStatus.state === 'ready' ? 'Global LOLA terrain' : terrainStatus.state === 'unavailable' ? 'Lunar terrain unavailable · showing globe' : 'Loading global lunar terrain…'}</div>
+          <div role="status" className="surface-source">{!terrainEnabled ? 'Terrain off' : regionalStatus?.ready ? 'Measured terrain' : regionalStatus?.failed ? 'Regional detail unavailable · showing fallback' : regionalStatus?.requests ? 'Loading regional relief…' : 'Terrain loads as you explore'}</div>
           <div className="terrain-options pilot-places">{pilotLocations.filter(p => p.body === selected).map(p => <button key={p.id} onClick={() => sceneRef.current?.pilot(p.id)}>{p.name}</button>)}</div>
-          {selected === 'moon' && <div className="terrain-options"><button aria-pressed={surfaceDetail} onClick={() => { sceneRef.current?.setSurfaceDetail(!surfaceDetail); setSurfaceDetail(!surfaceDetail) }}>Surface detail {surfaceDetail ? 'on' : 'off'}</button></div>}
-          {selected === 'moon' && <div className="terrain-options"><label>Moon color <select aria-label="Moon color" value={moonColor} onChange={e => { void changeMoonColor(e.target.value as MoonColorMode) }}><option value="raster">Original image</option><option value="6">Vector · 6 colors</option><option value="10">Vector · 10 colors</option><option value="16">Vector · 16 colors</option><option value="10-diagonal">10 · Diagonal</option><option value="10-smooth">10 · Smoothed</option></select></label></div>}
-          {selected === 'moon' && moonColor.startsWith('10-') && <div className="terrain-options"><button disabled={!!moonColorStatus} onClick={() => sceneRef.current?.previewMoonBoundary()}>Boundary close-up</button></div>}
-          {selected === 'moon' && moonColorStatus && <div role="status" className="surface-source">{moonColorStatus}</div>}
-          {selected === 'moon' && moonColor !== 'raster' && <div className="surface-source">Experimental color regions traced from the original image.</div>}
-          {selected === 'moon' && moonColor === '10-smooth' && <div className="surface-source">Curved regions with fixed ~300 m color transitions on the surface.</div>}
-          {selected === 'moon' && surfaceDetail && <div className="surface-source">Fine surface detail uses generated normal and roughness textures.</div>}
-          {selected === 'moon' && <div className="surface-source">The lunar surface uses smooth-shaded measured terrain.</div>}
-          {selected === 'earth' && <div className="surface-source">Color: <a href={earthColorSource.page} target="_blank" rel="noreferrer">{earthColorSource.label}</a> · {regionalStatus?.imagery?.ready ? 'streamed imagery' : 'globe fallback'} · © ESA WorldCover / modified Copernicus Sentinel data 2021</div>}
-          {selected === 'earth' && <div className="surface-source">Elevation: <a href="https://mapterhorn.com/attribution/" target="_blank" rel="noreferrer">© Mapterhorn</a> · streamed terrain</div>}
+          <div className="surface-source">Color: <a href={earthRenderProfile.colorSource.url} target="_blank" rel="noreferrer">NASA compact base composite</a> · {regionalStatus?.surface?.color === 'original' ? 'original fallback' : regionalStatus?.surface?.color === 'unavailable' ? 'unavailable · placeholder' : regionalStatus?.surface?.color === 'compact' ? 'loaded' : 'loading'}</div>
+          <div className="surface-source">Materials & water: <a href="https://openfreemap.org/" target="_blank" rel="noreferrer">OpenFreeMap</a> · <a href="https://openmaptiles.org/" target="_blank" rel="noreferrer">© OpenMapTiles</a> · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a></div>
+          <div role="status" className="surface-source">{regionalStatus?.surface?.vectors.ready ? 'Mapped local surfaces' : regionalStatus?.surface?.vectors.failed ? 'Local mapping unavailable · global fallback' : regionalStatus?.surface?.vectors.requests ? 'Loading mapped surfaces…' : 'Local mapping loads nearby'} · generated ground detail</div>
+          <div className="surface-source">Global ocean outline: <a href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer">Natural Earth</a></div>
+          {regionalStatus?.surface?.water === 'unavailable' && <div role="status" className="surface-source">Global water mask unavailable · showing base composite</div>}
+          <div className="surface-source">Elevation: <a href="https://mapterhorn.com/attribution/" target="_blank" rel="noreferrer">© Mapterhorn</a> · streamed terrain</div>
         </div>}
         {(isTerrainBody(selected) || selected === 'earth') && <div className="terrain-controls">
-          <div className="terrain-options">
-            <button aria-pressed={terrainEnabled} onClick={() => { sceneRef.current?.setTerrain(!terrainEnabled); setTerrainEnabled(!terrainEnabled) }}>Terrain {terrainEnabled ? 'on' : 'off'}</button>
-            {selected === 'mars' && <label>Mars color <select aria-label="Mars color" value={marsColor} onChange={e => { void changeMarsColor(e.target.value as 'raster' | '10-smooth') }}><option value="10-smooth">MOC-WA · 10 smooth</option><option value="raster">Fallback image</option></select></label>}
-            {(selected === 'earth' || selected === 'moon') && <button aria-pressed={terrainShadows} disabled={!terrainEnabled} onClick={() => { sceneRef.current?.setTerrainShadows(!terrainShadows); setTerrainShadows(!terrainShadows) }}>Shadows {terrainShadows ? 'on' : 'off'}</button>}
-            {(selected === 'moon' || selected === 'mars') && <button aria-pressed={terrainHillshade} disabled={!terrainEnabled} onClick={() => { sceneRef.current?.setTerrainHillshade(!terrainHillshade); setTerrainHillshade(!terrainHillshade) }}>Hillshade {terrainHillshade ? 'on' : 'off'}</button>}
-            {selected === 'mars' && <button aria-pressed={surfaceDetail} onClick={() => { sceneRef.current?.setSurfaceDetail(!surfaceDetail); setSurfaceDetail(!surfaceDetail) }}>Surface detail {surfaceDetail ? 'on' : 'off'}</button>}
-            <label>Relief <select aria-label="Terrain relief" value={terrainExaggeration} disabled={!terrainEnabled} onChange={e => { const value = Number(e.target.value); sceneRef.current?.setTerrainExaggeration(value); setTerrainExaggeration(value) }}><option value={1}>True scale</option><option value={4}>4× exaggerated</option></select></label>
-          </div>
-          {(selected === 'moon' || selected === 'mars') && terrainHillshade && <div className="surface-source">DEM slope shading from a fixed northwest light; independent of sunlight direction.</div>}
-          {selected === 'mars' && marsColorStatus && <div role="status" className="surface-source">{marsColorStatus}</div>}
-          {selected === 'mars' && marsColor === '10-smooth' && <div className="surface-source">Four-year photometrically corrected MOC-WA mean; broad color regions, not fine surface detail.</div>}
-          {selected === 'mars' && surfaceDetail && <div className="surface-source">Fine surface detail uses generated normal and roughness textures.</div>}
+          {!surfaceProfile && <div className="terrain-options">
+            <button aria-pressed={terrainEnabled} onClick={() => { sceneRef.current?.setTerrain(!terrainEnabled, selected); setTerrainSetting({ enabled: !terrainEnabled }) }}>Terrain {terrainEnabled ? 'on' : 'off'}</button>
+            {selected === 'earth' && <button aria-pressed={terrainShadows} disabled={!terrainEnabled} onClick={() => { sceneRef.current?.setTerrainShadows(!terrainShadows, selected); setTerrainSetting({ shadows: !terrainShadows }) }}>Shadows {terrainShadows ? 'on' : 'off'}</button>}
+            <label>Relief <select aria-label="Terrain relief" value={terrainExaggeration} disabled={!terrainEnabled} onChange={e => { const value = Number(e.target.value); sceneRef.current?.setTerrainExaggeration(value, selected); setTerrainSetting({ exaggeration: value }) }}><option value={1}>True scale</option><option value={4}>4× exaggerated</option></select></label>
+          </div>}
           {selected !== 'earth' && !regionalStatus?.ready && <div role="status" className="surface-source">{terrainStatus.state === 'ready' ? (terrainStatus.failedTiles ? 'Terrain on · some detail unavailable' : `Measured relief · ${terrainStatus.source && terrainStatus.source.resolution < 1000 ? `${Math.round(terrainStatus.source.resolution)} m` : `${((terrainStatus.source?.resolution ?? 0) / 1000).toFixed(1)} km`} source grid`) : terrainStatus.state === 'unavailable' ? 'Terrain unavailable · showing imagery' : terrainStatus.state === 'off' ? 'Terrain off · showing imagery' : terrainStatus.failedTiles ? 'Terrain unavailable · retrying' : 'Loading terrain…'}</div>}
           {terrainStatus.source && !regionalStatus?.ready && <div className="surface-source">Elevation: <a href={terrainStatus.source.url} target="_blank" rel="noreferrer">{terrainStatus.source.credit}</a>{terrainStatus.source.licenseUrl && <> · <a href={terrainStatus.source.licenseUrl} target="_blank" rel="noreferrer">License</a></>}</div>}
-          {terrainStatus.source?.gaps && <div className="surface-source">Gray terrain marks gaps in elevation coverage.</div>}
+          {terrainStatus.source?.gaps && <div className="surface-source">Elevation gaps use the reference sphere without measured relief.</div>}
           {terrainStatus.source?.approximate && <div className="surface-source">Heights above the Martian areoid, shown on a mean-radius sphere.</div>}
         </div>}
         <div className="info-actions"><button onClick={() => sceneRef.current?.focus(selected)}><Focus size={16} /> Focus view</button>{selected !== 'sun' && <button className="quiet" onClick={() => { const parent: BodyId = selected === 'moon' ? 'earth' : 'sun'; choose(parent) }}><ArrowLeft size={16} /> {selected === 'moon' ? 'Earth' : 'Sun'}</button>}</div>

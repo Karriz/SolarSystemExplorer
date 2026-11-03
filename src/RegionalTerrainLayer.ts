@@ -2,7 +2,9 @@ import * as THREE from 'three'
 import { firstTerrainSurfaceHit, type TerrainSurfaceSampler } from './terrainSurface.ts'
 import { captureTerrainEdge, stitchTerrainEdges, type TerrainEdge } from './terrainEdges.ts'
 import { earthMeshSize, heightGrid, meshTriangles, terrainSurfaceBounds, REGIONAL_TRIANGLE_BUDGET } from './terrainLod.ts'
-import { EarthImagery, configureEarthColor, earthColorUvs, earthColorTransform } from './earthImagery.ts'
+import { earthColorUvs } from './earthProjection.ts'
+import type { EarthSurfaceRenderer } from './EarthSurfaceRenderer.ts'
+import type { EarthMaskBinding } from './earthSurfaceMaterial.ts'
 import { bodyInfo } from './ephemeris.ts'
 import { terrainChildren, terrainGeometry } from './terrain.ts'
 import { tileBoundingSphere } from './GlobeTileLayer.ts'
@@ -12,9 +14,9 @@ import { geoDirection, tileKey, type RegionalSource, type TerrainPatch } from '.
 import type { TileAddress } from './surfaceTiles.ts'
 
 type Node = { address: TileAddress; source: RegionalSource; sphere: THREE.Sphere; box?: THREE.Box3; origin: THREE.Vector3; mesh?: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
-  heights?: Float32Array; gradients?: Float32Array; edge?: TerrainEdge; color?: { value: number }; colorTransform?: { value: THREE.Vector4 }; request?: AbortController; meshBytes?: number; bytes: number; used: number; retry: number }
+  heights?: Float32Array; gradients?: Float32Array; edge?: TerrainEdge; surface?: EarthMaskBinding; surfaceVersion?: string; request?: AbortController; meshBytes?: number; bytes: number; used: number; retry: number }
 export type RegionalMetrics = { ready: boolean; visible: number; cached: number; memoryBytes: number; transferBytes: number;
-  requests: number; failed: number; decodeMs: number; buildMs: number; triangles: number; sources: string[]; grids: Record<string, number>; maxLevel: number; triangleBudget: number; residentMeshes: number; imagery?: ReturnType<EarthImagery['metrics']> }
+  requests: number; failed: number; decodeMs: number; buildMs: number; triangles: number; sources: string[]; grids: Record<string, number>; maxLevel: number; triangleBudget: number; residentMeshes: number; surface?: ReturnType<EarthSurfaceRenderer['metrics']> }
 
 /** Small native-grid overlays. Parent patches stay visible until all replacing
  * children exist. The normal body/planetary terrain remains the outer fallback. */
@@ -35,8 +37,7 @@ export class RegionalTerrainLayer {
   private readonly radius: number
   private readonly radiusMeters: number
   private readonly base: THREE.MeshStandardMaterial
-  private imagery?: EarthImagery
-  private fallbackColor = { value: null as THREE.Texture | null }
+  private earthSurface?: EarthSurfaceRenderer
   private now = 0
   private selected = false
   private edgeSignature = ''
@@ -51,12 +52,12 @@ export class RegionalTerrainLayer {
   private state: SurfaceState
   private moonCamera = { value: new THREE.Vector3() }
 
-  constructor(body: THREE.Mesh, bodyId: 'earth' | 'moon', state: SurfaceState) {
+  constructor(body: THREE.Mesh, bodyId: 'earth' | 'moon', state: SurfaceState, earthSurface?: EarthSurfaceRenderer) {
     this.body = body; this.bodyId = bodyId; this.state = state
     this.radius = (body.geometry as THREE.SphereGeometry).parameters.radius
     this.radiusMeters = bodyInfo[bodyId].radiusKm * 1000
     this.base = body.material as THREE.MeshStandardMaterial
-    if (bodyId === 'earth') this.imagery = new EarthImagery()
+    this.earthSurface = earthSurface
     this.group.name = `${bodyId}-regional-terrain`
     this.group.scale.setScalar(this.radius)
     body.add(this.group)
@@ -73,7 +74,6 @@ export class RegionalTerrainLayer {
   }
   /** Group-local camera shared by lunar patches, in the same space as their origins. */
   updateShadeCamera(camera: THREE.Camera) {
-    if (this.bodyId !== 'moon') return
     this.body.updateWorldMatrix(true, true)
     this.moonCamera.value.copy(this.body.worldToLocal(camera.position.clone())).divideScalar(this.radius)
   }
@@ -122,7 +122,9 @@ export class RegionalTerrainLayer {
   private geometry(node: Node) {
     const bounds = node.source.bounds(node.address)
     const size = this.gridSize(node)
-    const heights = heightGrid(node.heights!, node.source.sampleSize ?? 65, size)
+    const measured = heightGrid(node.heights!, node.source.sampleSize ?? 65, size)
+    const heights = this.earthSurface?.waterHeights(node.address, bounds, size, measured) ?? measured
+    node.surfaceVersion = this.earthSurface?.geometryVersion(node.address)
     const geometry = terrainGeometry(bounds, heights, size, this.radiusMeters, this.radiusMeters, this.exaggeration, node.origin)
     if (this.bodyId === 'earth') geometry.setAttribute('earthColorUv', earthColorUvs(bounds, size, node.address))
     if (this.bodyId !== 'earth' && node.gradients) {
@@ -143,7 +145,7 @@ export class RegionalTerrainLayer {
     this.refined.clear()
     this.groundNode = undefined
     this.wanted.clear()
-    this.imagery?.update([], this.now)
+    this.earthSurface?.vectors.update([], this.now)
     this.state.clipCount.value = 0
     this.group.visible = false
     for (const node of this.nodes.values()) {
@@ -161,7 +163,7 @@ export class RegionalTerrainLayer {
       this.deactivate()
       if (!selected) {
         for (const [key, node] of this.nodes) if (!node.request) { this.release(node); this.nodes.delete(key) }
-        this.imagery?.clear()
+        this.earthSurface?.vectors.clear()
       }
       return
     }
@@ -241,7 +243,20 @@ export class RegionalTerrainLayer {
     }
     roots.forEach(show)
     const visible = [...this.nodes.values()].filter(n => n.mesh?.visible && n.edge)
-    const signature = this.fallbackSignature() + '/' + visible.map(n => this.key(n.source, n.address)).sort().join('|')
+    this.earthSurface?.prepare(visible.map(n => n.address), now, { lon: viewLon, lat: viewLat })
+    for (const node of visible) {
+      if (node.surface && this.earthSurface) {
+        this.earthSurface.bind(node.address, node.surface)
+        if (node.surfaceVersion !== this.earthSurface.geometryVersion(node.address)) {
+          node.mesh!.geometry.dispose(); node.mesh!.geometry = this.geometry(node)
+          node.edge = captureTerrainEdge(node.mesh!.geometry, this.gridSize(node))
+          node.box = this.surfaceBox(node)
+          node.sphere.copy(node.mesh!.geometry.boundingSphere!); node.sphere.center.add(node.origin)
+          this.edgeSignature = ''
+        }
+      }
+    }
+    const signature = this.fallbackSignature() + '/' + visible.map(n => this.key(n.source, n.address) + '/' + n.surfaceVersion).sort().join('|')
     if (signature !== this.edgeSignature) {
       const started = performance.now()
       stitchTerrainEdges(visible.map(n => ({ key: this.key(n.source, n.address), level: n.address.z,
@@ -258,14 +273,8 @@ export class RegionalTerrainLayer {
       this.state.clips.value[this.state.clipCount.value++].set(b.west, b.south, b.east, b.north)
     }
     this.group.visible = this.state.clipCount.value > 0
-    this.fallbackColor.value = this.base.map
-    this.imagery?.update(visible.map(n => n.address), now, { lon: viewLon, lat: viewLat })
-    for (const node of this.nodes.values()) if (node.mesh) {
-      const color = node.mesh.visible ? this.imagery?.texture(node.address) : undefined
-      const map = color ?? this.base.map
-      if (node.color) node.color.value = color ? 1 : 0
-      if (color && node.colorTransform) earthColorTransform(node.address, color, node.colorTransform.value)
-      if (node.mesh.material.map !== map) { node.mesh.material.map = map; node.mesh.material.needsUpdate = true }
+    for (const node of this.nodes.values()) if (node.mesh && node.mesh.material.map !== this.base.map) {
+      node.mesh.material.map = this.base.map; node.mesh.material.needsUpdate = true
     }
     this.pump()
     for (const [key, node] of this.nodes) if (!this.wanted.has(key) && !node.request && !node.mesh) this.nodes.delete(key)
@@ -332,7 +341,7 @@ export class RegionalTerrainLayer {
       const started = performance.now()
       const material = new THREE.MeshStandardMaterial({ map: this.base.map, roughness: 1, metalness: 0 })
       if (this.bodyId === 'moon') configureMoonSurfaceMaterial(material, this.state, this.radiusMeters, false, node.origin, this.moonCamera)
-      else { node.color = { value: 0 }; node.colorTransform = { value: new THREE.Vector4(1, 1, 0, 0) }; configureEarthColor(material, node.color, this.fallbackColor, node.colorTransform) }
+      else if (this.earthSurface) { node.surface = this.earthSurface.binding(); this.earthSurface.configurePatch(material, node.origin, this.moonCamera, node.surface) }
       node.mesh = new THREE.Mesh(this.geometry(node), material)
       node.edge = captureTerrainEdge(node.mesh.geometry, this.gridSize(node))
       node.sphere.copy(node.mesh.geometry.boundingSphere!)
@@ -391,13 +400,28 @@ export class RegionalTerrainLayer {
     const picker = new THREE.Raycaster(center.clone().addScaledVector(direction, this.radius * 2), direction.negate())
     return firstTerrainSurfaceHit(picker, [candidates[0].mesh!])?.point.distanceTo(center)
   }
+  /** Sample original measured grids, before water placement or exaggeration. */
+  sampleMeasuredHeight(lat: number, lon: number): number {
+    let node: Node | undefined
+    for (const candidate of this.nodes.values()) {
+      if (!candidate.heights || candidate.address.z < 10 || (node && candidate.address.z <= node.address.z)) continue
+      const b = candidate.source.bounds(candidate.address)
+      if (lon >= b.west && lon <= b.east && lat >= b.south && lat <= b.north) node = candidate
+    }
+    if (!node?.heights) return NaN
+    const b = node.source.bounds(node.address), size = node.source.sampleSize ?? 65
+    const x = (lon - b.west) / (b.east - b.west) * (size - 1), y = (b.north - lat) / (b.north - b.south) * (size - 1)
+    const c = Math.min(size - 2, Math.max(0, Math.floor(x))), r = Math.min(size - 2, Math.max(0, Math.floor(y))), u = x - c, v = y - r, h = node.heights
+    return (h[r * size + c] * (1 - u) + h[r * size + c + 1] * u) * (1 - v)
+      + (h[(r + 1) * size + c] * (1 - u) + h[(r + 1) * size + c + 1] * u) * v
+  }
   metrics(): RegionalMetrics {
     const visible = [...this.nodes.values()].filter(n => n.mesh?.visible && this.group.visible)
     return { ready: visible.length > 0, visible: visible.length, cached: [...this.nodes.values()].filter(n => n.mesh).length,
       memoryBytes: this.bytes, transferBytes: this.transferBytes, requests: this.requests, failed: [...this.nodes.values()].filter(n => n.retry > 0).length,
       decodeMs: this.decodeMs, buildMs: this.buildMs, triangles: visible.reduce((s, n) => s + n.mesh!.geometry.index!.count / 3, 0),
       sources: this.sources.map(s => s.id), grids: Object.fromEntries([33, 65, 129].map(size => [size, visible.filter(n => this.gridSize(n) === size).length])),
-      maxLevel: visible.reduce((z, n) => Math.max(z, n.address.z), 0), triangleBudget: REGIONAL_TRIANGLE_BUDGET, residentMeshes: [...this.nodes.values()].filter(n => n.edge).length, imagery: this.imagery?.metrics() }
+      maxLevel: visible.reduce((z, n) => Math.max(z, n.address.z), 0), triangleBudget: REGIONAL_TRIANGLE_BUDGET, residentMeshes: [...this.nodes.values()].filter(n => n.edge).length, surface: this.earthSurface?.metrics() }
   }
   private release(node: Node) {
     node.mesh?.removeFromParent(); node.mesh?.customDepthMaterial?.dispose(); node.mesh?.geometry.dispose(); node.mesh?.material.dispose()
@@ -407,6 +431,6 @@ export class RegionalTerrainLayer {
     if (this.disposed) return
     this.disposed = true; this.deactivate()
     for (const node of this.nodes.values()) this.release(node)
-    this.nodes.clear(); this.imagery?.dispose(); this.sources.forEach(s => s.dispose?.()); this.group.removeFromParent()
+    this.nodes.clear(); this.sources.forEach(s => s.dispose?.()); this.group.removeFromParent()
   }
 }

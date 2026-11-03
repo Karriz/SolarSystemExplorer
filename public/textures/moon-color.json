@@ -1,0 +1,77 @@
+{
+  "controlSamples": [
+    {
+      "lat": 26.13,
+      "lon": 3.63,
+      "srgb": [
+        147.6650942227645,
+        140.71634464432654,
+        137.55242028441805
+      ]
+    },
+    {
+      "lat": -43.31,
+      "lon": -11.36,
+      "srgb": [
+        231.8344779513836,
+        238.79507228837832,
+        244.3176016533289
+      ]
+    },
+    {
+      "lat": -20,
+      "lon": 140,
+      "srgb": [
+        192.90055235867106,
+        189.63801703461743,
+        188.3613283504249
+      ]
+    },
+    {
+      "lat": 10,
+      "lon": 179.9,
+      "srgb": [
+        211.91746356688552,
+        209.193325634573,
+        209.7347701412727
+      ]
+    },
+    {
+      "lat": 85,
+      "lon": 0,
+      "srgb": [
+        216.99999999999997,
+        213.0,
+        209.3896336039151
+      ]
+    }
+  ],
+  "schema": 1,
+  "source": "NASA SVS CGI Moon Kit 2025, original sRGB 16-bit 8K TIFF",
+  "sourceUrl": "https://svs.gsfc.nasa.gov/4720/",
+  "credit": "NASA SVS / LRO LROC and LOLA teams",
+  "sourceSha256": "db7808e878b6a55eb409bb231eab8deb477f84b5c9d7396d76ff73e5d54992d9",
+  "width": 4096,
+  "height": 2048,
+  "downsample": "2x2 in linear light, then encode sRGB",
+  "selectedQuality": 95,
+  "candidates": [
+    {
+      "quality": 90,
+      "bytes": 1451388,
+      "encodeSeconds": 0.7759528420010611,
+      "meanChannelError": 1.6831274429957073,
+      "p99ChannelError": 7.0
+    },
+    {
+      "quality": 95,
+      "bytes": 2256820,
+      "encodeSeconds": 0.9239046820002841,
+      "meanChannelError": 1.1985834836959839,
+      "p99ChannelError": 5.0
+    }
+  ],
+  "buildSeconds": 6.953613300998768,
+  "limitations": "Exposure/white balance adjusted in NASA visual product; polar gaps use lower-resolution monochrome albedo",
+  "deliveredSha256": "acfb8ccfedb85fa46cbbe4c9c87f2e8b0792e748dc15dba6dc08a28523491982"
+}

@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "body": "earth",
+  "width": 4096,
+  "height": 2048,
+  "source": "NASA BMNG October 2004 base map without added relief shading",
+  "sourceUrl": "https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-map/",
+  "sourceSha256": "ccfd9b7a5e5ee601e1466556716bba50ea418f3a8e068ab0194ae0425815b1b0",
+  "colorSha256": "c3661272bed652c82456ba9655c3f2f539d429fd5fe927e1812fa20cfb8ad86a",
+  "globalMask": {
+    "width": 2048,
+    "height": 1024,
+    "source": "Natural Earth 1:10m ocean",
+    "sourceUrl": "https://www.naturalearthdata.com/downloads/10m-physical-vectors/10m-ocean/",
+    "inputSha256": "f9696a1337c746a0f6c8c13bc60d0f230d2ef8d105198d5657726c8f8e763fc2",
+    "sha256": "a81fad7bc9425befe0ea192230be84c172fbb467608cb0df4c5f76aa805ec818",
+    "classes": {
+      "0": "unclassified land",
+      "9": "mapped ocean"
+    },
+    "note": "Generalized overview, not ground-level shorelines. Inland water comes from local vector tiles."
+  },
+  "detail": "Generated packed normal/roughness detail; mapped local classes from OpenFreeMap. No generated displacement.",
+  "note": "Appearance composite, not calibrated albedo. Global WorldCover overview is not installed."
+}

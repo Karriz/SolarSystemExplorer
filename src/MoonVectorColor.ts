@@ -1,7 +1,8 @@
 import * as THREE from 'three'
 import type { SurfaceState } from './surfaceMaterial'
 
-export type MoonColorMode = 'raster' | '6' | '10' | '16' | '10-diagonal' | '10-smooth'
+export type MoonVectorMode = 'raster' | '6' | '10' | '16' | '10-diagonal' | '10-smooth'
+export type MoonColorMode = MoonVectorMode | 'compact' | 'source'
 type Manifest = {
   schema: number; width: number; height: number; tileSize: number; palette: string[]
   tiles: { x: number; y: number; file: string }[]
@@ -115,7 +116,7 @@ export class MoonVectorColor {
 
   cancel() { this.request?.abort(); this.request = undefined }
 
-  async load(mode: Exclude<MoonColorMode, 'raster'>): Promise<THREE.CanvasTexture | null> {
+  async load(mode: Exclude<MoonVectorMode, 'raster'>): Promise<THREE.CanvasTexture | null> {
     this.cancel()
     const request = this.request = new AbortController()
     const base = `${import.meta.env.BASE_URL}${this.assetDirectory}/${mode}/`

@@ -47,7 +47,7 @@
   "mars": {
     "product": "hrsc-mola200-v2",
     "file": "mars-hrsc-mola-200m.tif",
-    "url": "https://planetarymaps.usgs.gov/mosaic/Mars/HRSC_MOLA_Blend/Mars_HRSC_MOLA_BlendDEM_Global_200mp_v2.tif",
+    "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Mars/HRSC_MOLA_Blend/Mars_HRSC_MOLA_BlendDEM_Global_200mp_v2.tif",
     "sha256": "e8bfe4c3b9dee9d5fdb8c4d49798869654e552e7b154712c9e12d6d117464419",
     "width": 106694,
     "height": 53347,
@@ -76,7 +76,7 @@
   "mercury": {
     "product": "messenger-v2",
     "file": "mercury.tif",
-    "url": "https://planetarymaps.usgs.gov/mosaic/Mercury_Messenger_USGS_DEM_Global_665m_v2.tif",
+    "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Mercury_Messenger_USGS_DEM_Global_665m_v2.tif",
     "sha256": "defce776241dcaf44cb0f081ee508c17dbea28aa5a22880bf7a5e8c25f96cbea",
     "width": 23040,
     "height": 11520,
@@ -96,7 +96,7 @@
   "venus": {
     "product": "magellan-v2",
     "file": "venus.tif",
-    "url": "https://planetarymaps.usgs.gov/mosaic/Venus_Magellan_Topography_Global_4641m_v02.tif",
+    "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Venus_Magellan_Topography_Global_4641m_v02.tif",
     "sha256": "92dd2c8850b128f9dcceb400f1367e3df96229f5309840fee4275b74f192ea11",
     "width": 8192,
     "height": 4096,

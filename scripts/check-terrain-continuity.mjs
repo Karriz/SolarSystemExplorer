@@ -48,8 +48,8 @@ try {
     let peakTrackedBytes = 0, metrics, settled = false, stable = 0, previous = ''
     while (Date.now() - started < 90000) {
       metrics = await page.evaluate(() => window.terrainPilot.metrics())
-      const m = metrics.regional.earth, image = m.imagery
-      const total = Object.values(metrics.regional).reduce((sum, r) => sum + r.memoryBytes + (r.imagery?.memoryBytes ?? 0), 0)
+      const m = metrics.regional.earth, image = m.surface.vectors
+      const total = Object.values(metrics.regional).reduce((sum, r) => sum + r.memoryBytes + (r.surface?.vectors.memoryBytes ?? 0), 0)
       peakTrackedBytes = Math.max(peakTrackedBytes, total)
       assert.ok(m.memoryBytes <= 48*1024*1024); assert.ok(image.memoryBytes <= 32*1024*1024)
       assert.ok(m.triangles <= m.triangleBudget)

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
 import * as THREE from 'three'
-import { earthColorUvs, earthColorTransform, configureEarthColor } from '../src/earthImagery.ts'
+import { earthColorUvs } from '../src/earthProjection.ts'
+import { earthMaskTransform, earthMaskBinding, configureEarthMaskProjection } from '../src/earthSurfaceMaterial.ts'
 import { mercatorAddress, mercatorBounds } from '../src/terrainPilot.ts'
 
 // Exercise the actual material's UV assignment on WebGL, without network tiles
@@ -12,17 +13,16 @@ try {
   const page=await browser.newPage()
   for(const [lon,lat] of [[24.6,60.38],[8.02,46.57],[14.58,-21.12],[179.99,85],[-179.99,-85]]) for(const z of [8,14,15]) {
     const a=mercatorAddress(lon,lat,z),local=earthColorUvs(mercatorBounds(a),9,a)
-    for(const parentLevels of [0,2]){
+    for(const parentLevels of [0,2])for(const maskWidth of [260,516]){
       const p={z:z-parentLevels,x:Math.floor(a.x/2**parentLevels),y:Math.floor(a.y/2**parentLevels)},texture=new THREE.Texture(),material=new THREE.MeshStandardMaterial()
       texture.repeat.set(2**p.z,2**p.z);texture.offset.set(-p.x,-(2**p.z-p.y-1))
-      const transform=earthColorTransform(a,texture)
-      configureEarthColor(material,{value:1},{value:null},{value:transform})
+      const transform=earthMaskTransform(a,p,undefined,maskWidth)
       const shader={uniforms:{},vertexShader:`in vec2 uv; out vec2 vMapUv; uniform mat3 mapTransform;
 void main(){
 #include <uv_vertex>
 gl_Position=vec4(0,0,0,1);
 }`,fragmentShader:'#include <map_fragment>'}
-      material.onBeforeCompile(shader,null)
+      const binding=earthMaskBinding();binding.transform.value.copy(transform);configureEarthMaskProjection(shader,binding)
       const vertex='#version 300 es\nprecision highp float;\n#define USE_MAP\n'+shader.vertexShader.replaceAll('attribute ','in ').replaceAll('varying ','out ').replace('#include <uv_vertex>','')
       const output=await page.evaluate(({vertex,local,transform})=>{
         const gl=document.createElement('canvas').getContext('webgl2')
@@ -33,10 +33,10 @@ gl_Position=vec4(0,0,0,1);
           if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(shader))
           gl.attachShader(program,shader)
         }
-        gl.transformFeedbackVaryings(program,['vMapUv'],gl.INTERLEAVED_ATTRIBS);gl.linkProgram(program)
+        gl.transformFeedbackVaryings(program,['vEarthMaskUv'],gl.INTERLEAVED_ATTRIBS);gl.linkProgram(program)
         if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program))
         gl.useProgram(program);gl.uniform1f(gl.getUniformLocation(program,'earthColorActive'),1)
-        gl.uniform4fv(gl.getUniformLocation(program,'earthColorTransform'),transform)
+        gl.uniform4fv(gl.getUniformLocation(program,'earthMaskTransform'),transform)
         const input=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,input);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(local),gl.STATIC_DRAW)
         const loc=gl.getAttribLocation(program,'earthColorUv');gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0)
         const buffer=gl.createBuffer();gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER,0,buffer);gl.bufferData(gl.TRANSFORM_FEEDBACK_BUFFER,local.length*4,gl.DYNAMIC_READ)
@@ -51,8 +51,8 @@ gl_Position=vec4(0,0,0,1);
         const expected=local.array[i]*(i%2?transform.y:transform.x)+(i%2?transform.w:transform.z)
         maxError=Math.max(maxError,Math.abs(output.values[i]-expected))
       }
-      assert.ok(maxError<1/256/256,`Projection error exceeds 1/256 of a texel: ${maxError}`)
-      console.log(JSON.stringify({lat,z,parentLevels,maxTexelError:maxError*256,renderer:output.renderer}))
+      assert.ok(maxError<1/maskWidth/256,`Projection error exceeds 1/256 of a texel: ${maxError}`)
+      console.log(JSON.stringify({lat,z,parentLevels,maskWidth,maxTexelError:maxError*maskWidth,renderer:output.renderer}))
       material.dispose();texture.dispose()
     }
   }

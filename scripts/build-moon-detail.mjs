@@ -1,7 +1,8 @@
-// Offline, seamless normal/roughness data. No lighting or measured topography
+// Offline, seamless packed normal/reflectance/roughness data. No lighting or measured topography
 // is baked into this small reusable material texture.
 import { deflateSync } from 'node:zlib'
 import { writeFileSync } from 'node:fs'
+import { pathToFileURL } from 'node:url'
 
 const size = 512
 function hash(x, y, seed = 0) {
@@ -18,7 +19,7 @@ function noise(x, y, cells) {
   const c = hash(wrap(ix), wrap(iy + 1), cells), d = hash(wrap(ix + 1), wrap(iy + 1), cells)
   return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy
 }
-function bakeMaterial(file, meters, medium = false) {
+export function bakeMaterial(file, meters, medium = false, mercury = false) {
   const heights = new Float32Array(size * size), rockCover = new Float32Array(size * size)
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     // Warp the fine grains with a broad continuous field, avoiding visible
@@ -41,8 +42,8 @@ function bakeMaterial(file, meters, medium = false) {
   }
   // Partly buried angular fragments, with irregular polygon outlines and
   // unequal fractured faces. No circular bowls or raised crater rings.
-  for (let feature = 0; feature < (medium ? 220 : 900); feature++) {
-    const i = feature + (medium ? 10000 : 0)
+  for (let feature = 0; feature < (medium ? (mercury ? 320 : 220) : (mercury ? 1200 : 900)); feature++) {
+    const i = feature + (medium ? 10000 : 0) + (mercury ? 37000 : 0)
     const cx = hash(i, 1) * size, cy = hash(i, 2) * size
     const cluster = noise(cx / size * 8, cy / size * 8, 8)
     if (hash(i, 4) > (medium ? .12 + cluster * .7 : .22 + cluster * .8)) continue
@@ -75,7 +76,13 @@ function bakeMaterial(file, meters, medium = false) {
     const length = Math.hypot(dx, dy, 1), offset = y * (size * 4 + 1) + 1 + x * 4
     raw[offset] = Math.round((-.5 * dx / length + .5) * 255)
     raw[offset + 1] = Math.round((-.5 * dy / length + .5) * 255)
-    raw[offset + 2] = Math.round((.5 / length + .5) * 255)
+    // RG stores normal XY; reconstruct positive Z in the shader. B stores
+    // generated reflectance variation, independent of lighting and roughness.
+    const soil = noise(x / size * 12, y / size * 12, 12)
+    const patches = noise(x / size * 4 + 1.7, y / size * 4 + 2.1, 4)
+    const brightness = .5 + (soil - .5) * .65 + (patches - .5) * .5
+      + rockCover[y * size + x] * (mercury ? .22 : .16)
+    raw[offset + 2] = Math.round(Math.max(0, Math.min(1, brightness)) * 255)
     const dust = noise(x / size * 16, y / size * 16, 16)
     const exposed = medium ? Math.max(0, noise(x / size * 8, y / size * 8, 8) - .35) * .045 : 0
     const roughness = .96 + dust * .025 - exposed - rockCover[y * size + x] * .065 + (hash(x, y, 7) - .5) * .012
@@ -101,5 +108,7 @@ function bakeMaterial(file, meters, medium = false) {
   console.log(`Baked ${file}: ${size} x ${size}, ${meters} m repeat, ${png.length} bytes`)
 }
 
-bakeMaterial('moon-detail.png', 64)
-bakeMaterial('moon-medium-detail.png', 256, true)
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  bakeMaterial('moon-detail.png', 64)
+  bakeMaterial('moon-medium-detail.png', 256, true)
+}

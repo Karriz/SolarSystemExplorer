@@ -1,0 +1,78 @@
+{
+  "schema": 1,
+  "body": "venus",
+  "width": 4096,
+  "height": 2048,
+  "source": "Inferred uniform basalt material; not measured global color",
+  "sourceUrl": "https://ntrs.nasa.gov/citations/19870039592",
+  "credit": "Pieters et al. (1986), qualitative Venera 13 color constraint; illustrative material by SolarSystemExplorer",
+  "linearReflectanceAssumption": [
+    0.095,
+    0.09,
+    0.085
+  ],
+  "srgb": [
+    87,
+    85,
+    82
+  ],
+  "limitations": "RGB values are artistic assumptions, not calibrated Venera measurements. White-light, cloud-free visualization; no atmospheric orange illumination. No radar brightness, elevation tint, baked shadow or invented geographic color variation.",
+  "controlSamples": [
+    {
+      "lat": 0,
+      "lon": 0,
+      "srgb": [
+        87,
+        85,
+        82
+      ]
+    },
+    {
+      "lat": 65,
+      "lon": 3,
+      "srgb": [
+        87,
+        85,
+        82
+      ]
+    },
+    {
+      "lat": 0.5,
+      "lon": -165.4,
+      "srgb": [
+        87,
+        85,
+        82
+      ]
+    },
+    {
+      "lat": 90,
+      "lon": 0,
+      "srgb": [
+        87,
+        85,
+        82
+      ]
+    },
+    {
+      "lat": -90,
+      "lon": 0,
+      "srgb": [
+        87,
+        85,
+        82
+      ]
+    },
+    {
+      "lat": 10,
+      "lon": 179.99,
+      "srgb": [
+        87,
+        85,
+        82
+      ]
+    }
+  ],
+  "deliveredSha256": "8fd4c250da55dfee50920685b44690424a7e1eb4290a926995b34327690e831b",
+  "bytes": 396
+}

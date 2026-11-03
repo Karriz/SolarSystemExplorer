@@ -1,0 +1,918 @@
+{
+  "schema": 1,
+  "body": "mercury",
+  "width": 4096,
+  "height": 2048,
+  "source": "MESSENGER MDIS MDR final version 4, 64 ppd",
+  "sourceUrl": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/",
+  "doi": "10.17189/1520178",
+  "archiveErrataUrl": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/ERRATA.TXT",
+  "license": "NASA PDS data; cite MESSENGER MDIS team and dataset DOI",
+  "credit": "NASA / JHUAPL / Carnegie / ACT \u00b7 MESSENGER MDIS",
+  "channels": {
+    "red": "630 nm measured I/F",
+    "green": "560 nm measured I/F",
+    "blue": "480 nm measured I/F"
+  },
+  "treatment": "Approximate visible RGB, fixed gain 1, standard sRGB encoding; no per-channel stretch or added hillshade",
+  "limitations": "Narrow-band visible approximation, not a colorimetric human-eye reconstruction; photometric seams remain; south-polar fill uses images up to 2700 m/px; missing pixels neutral gray",
+  "validCoverageFraction": 0.952738881111145,
+  "surfaceCoverageFraction": 0.9960122021850596,
+  "coarseSouthPolarPixelFraction": 0.016997694969177246,
+  "missingFillLinear": 0.05676940456032753,
+  "controlSamples": [
+    {
+      "lat": 20,
+      "lon": 160,
+      "pixel": [
+        3868,
+        796
+      ],
+      "linearReflectance": [
+        0.0645284503698349,
+        0.05720097944140434,
+        0.049499865621328354
+      ],
+      "srgb": [
+        72,
+        68,
+        63
+      ],
+      "measured": true
+    },
+    {
+      "lat": -20,
+      "lon": -70,
+      "pixel": [
+        1251,
+        1251
+      ],
+      "linearReflectance": [
+        0.06522303074598312,
+        0.05902848392724991,
+        0.05145038291811943
+      ],
+      "srgb": [
+        72,
+        69,
+        64
+      ],
+      "measured": true
+    },
+    {
+      "lat": 0,
+      "lon": 0,
+      "pixel": [
+        2048,
+        1024
+      ],
+      "linearReflectance": [
+        0.05920775979757309,
+        0.05485879257321358,
+        0.04748595505952835
+      ],
+      "srgb": [
+        69,
+        66,
+        62
+      ],
+      "measured": true
+    },
+    {
+      "lat": 10,
+      "lon": 179.9,
+      "pixel": [
+        4094,
+        910
+      ],
+      "linearReflectance": [
+        0.06739442050457001,
+        0.06124605983495712,
+        0.053501103073358536
+      ],
+      "srgb": [
+        73,
+        70,
+        65
+      ],
+      "measured": true
+    },
+    {
+      "lat": 85,
+      "lon": 45,
+      "pixel": [
+        2560,
+        56
+      ],
+      "linearReflectance": [
+        0.05676940456032753,
+        0.05676940456032753,
+        0.05676940456032753
+      ],
+      "srgb": [
+        67,
+        67,
+        67
+      ],
+      "measured": false
+    },
+    {
+      "lat": -85,
+      "lon": 45,
+      "pixel": [
+        2560,
+        1991
+      ],
+      "linearReflectance": [
+        0.040999237447977066,
+        0.03693407401442528,
+        0.030605321750044823
+      ],
+      "srgb": [
+        57,
+        54,
+        49
+      ],
+      "measured": true
+    }
+  ],
+  "sourceResolutionPixelsPerDegree": 64,
+  "sources": [
+    {
+      "product": "MDIS_MDR_064PPD_2700_H15SP4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H15/MDIS_MDR_064PPD_2700_H15SP4.IMG",
+      "byteRange": [
+        45859984,
+        183439935
+      ],
+      "sourceBytes": 779619728,
+      "etag": "\"2e780d90-547e126b28280\"",
+      "lastModified": "Mon, 06 Feb 2017 18:53:46 GMT",
+      "labelSha256": "5a30c1cad6768e170c1f6b4f2ea91179a6d7f562e1b0771816ea2b7e7e53dd57",
+      "sha256": "af0ee8bde01853ecdc74cf5babd28125488cd501615c700a02c3771368290f30",
+      "bytes": 137579952
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H01NP4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H01/MDIS_MDR_064PPD_H01NP4.IMG",
+      "byteRange": [
+        45859984,
+        183439935
+      ],
+      "sourceBytes": 779619728,
+      "etag": "\"2e780d90-547e121fd10c0\"",
+      "lastModified": "Mon, 06 Feb 2017 18:52:27 GMT",
+      "labelSha256": "40cab5eab575ab0e5271c8823b6e1f8f1649e3928fdd2148a0af0f1a6277c01d",
+      "sha256": "bb5c78c60452bda6395148beabec81391cb987109b93f2d8575e3aea547c1443",
+      "bytes": 137579952
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H02NE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H02/MDIS_MDR_064PPD_H02NE4.IMG",
+      "byteRange": [
+        11315200,
+        45260799
+      ],
+      "sourceBytes": 192358400,
+      "etag": "\"b772800-547e11bca26c0\"",
+      "lastModified": "Mon, 06 Feb 2017 18:50:43 GMT",
+      "labelSha256": "5ffef2a9d07db2b5c1c512b5d7b8762e18fd286548cea7354393922df356fa40",
+      "sha256": "496f80ca78e6d8fb1c956336c7162c0580d5c0a44135bc8206b0907b1ab4de4f",
+      "bytes": 33945600
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H02NW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H02/MDIS_MDR_064PPD_H02NW4.IMG",
+      "byteRange": [
+        11315200,
+        45260799
+      ],
+      "sourceBytes": 192358400,
+      "etag": "\"b772800-547e11b224e00\"",
+      "lastModified": "Mon, 06 Feb 2017 18:50:32 GMT",
+      "labelSha256": "0661e491f085b50059842c2d4d9b2c90e03b56854501b335355065edf850be76",
+      "sha256": "7188f5c02ac59225e4c5eb8241a25f16f1bc8b6b180f0460dcfb66576f005d4f",
+      "bytes": 33945600
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H02SE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H02/MDIS_MDR_064PPD_H02SE4.IMG",
+      "byteRange": [
+        14475840,
+        57903359
+      ],
+      "sourceBytes": 246089280,
+      "etag": "\"eab0640-547e11b7ddb80\"",
+      "lastModified": "Mon, 06 Feb 2017 18:50:38 GMT",
+      "labelSha256": "a50920dcbe8b2a3dadb5d31a19b49dbdb86b1fe594950b2cb062bdcff2a5ea22",
+      "sha256": "eff8e9f8b5277fe52737b6f6012123e437e87f4fd9108587293dd4ce3104ba8b",
+      "bytes": 43427520
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H02SW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H02/MDIS_MDR_064PPD_H02SW4.IMG",
+      "byteRange": [
+        14475840,
+        57903359
+      ],
+      "sourceBytes": 246089280,
+      "etag": "\"eab0640-547e11ad602c0\"",
+      "lastModified": "Mon, 06 Feb 2017 18:50:27 GMT",
+      "labelSha256": "42cdf72b786c8921c9eb433c3eed8f9b7973d412a48b7304a0e3ff37fdec8493",
+      "sha256": "d1d7b212d7a84a90d90560e0ea99bba1b35c1c67bba9542404e955d16f70e57d",
+      "bytes": 43427520
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H03NE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H03/MDIS_MDR_064PPD_H03NE4.IMG",
+      "byteRange": [
+        11315200,
+        45260799
+      ],
+      "sourceBytes": 192358400,
+      "etag": "\"b772800-547e134774a40\"",
+      "lastModified": "Mon, 06 Feb 2017 18:57:37 GMT",
+      "labelSha256": "35f673afb81a449b6e06ec3db625bc3a75960106c04a5783265ccb3d74b07378",
+      "sha256": "41221a08837c2741dc58a0b7befa3b4ce083bb26b0ffca455b856cf265eb43aa",
+      "bytes": 33945600
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H03NW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H03/MDIS_MDR_064PPD_H03NW4.IMG",
+      "byteRange": [
+        11315200,
+        45260799
+      ],
+      "sourceBytes": 192358400,
+      "etag": "\"b772800-547e132bcc900\"",
+      "lastModified": "Mon, 06 Feb 2017 18:57:08 GMT",
+      "labelSha256": "23f37bbfd71a4c3c605b01cf537006d8b6eaef5d2a34d979c8112881a7745a07",
+      "sha256": "8cd8029618a07b3bf5c8cc508bddfe46a23e067f02d200da9b44647f50d5a277",
+      "bytes": 33945600
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H03SE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H03/MDIS_MDR_064PPD_H03SE4.IMG",
+      "byteRange": [
+        14475840,
+        57903359
+      ],
+      "sourceBytes": 246089280,
+      "etag": "\"eab0640-547e134d2d7c0\"",
+      "lastModified": "Mon, 06 Feb 2017 18:57:43 GMT",
+      "labelSha256": "f6212e41ce83eaa9f3f5d1aaa7170aba31c100f20e1e56ef1afaad62779cdcc5",
+      "sha256": "ab409ee477339c5afecbb0e58938eab82c02787c1663170976731480397f90f2",
+      "bytes": 43427520
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H03SW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H03/MDIS_MDR_064PPD_H03SW4.IMG",
+      "byteRange": [
+        14475840,
+        57903359
+      ],
+      "sourceBytes": 246089280,
+      "etag": "\"eab0640-547e1314e9300\"",
+      "lastModified": "Mon, 06 Feb 2017 18:56:44 GMT",
+      "labelSha256": "6bb204d1c74f2f1a6b2361dddf516347ef75455e201e21196694baa2f6e85cf9",
+      "sha256": "cf44e9f1eb572c1aee933b6bc8229eb8d4c3a704344a71c3d8b959f05619f8c5",
+      "bytes": 43427520
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H04NE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H04/MDIS_MDR_064PPD_H04NE4.IMG",
+      "byteRange": [
+        11315200,
+        45260799
+      ],
+      "sourceBytes": 192358400,
+      "etag": "\"b772800-547e11caf0880\"",
+      "lastModified": "Mon, 06 Feb 2017 18:50:58 GMT",
+      "labelSha256": "b5cfe020224b8633103bb0e9b48a262d9d62d61d485e0e483b2c5c48e28eb451",
+      "sha256": "cf53d462165cf462ea7ffcd42d71afd19c5497e7200a5cc9dbc47da29051b8d3",
+      "bytes": 33945600
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H04NW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H04/MDIS_MDR_064PPD_H04NW4.IMG",
+      "byteRange": [
+        11315200,
+        45260799
+      ],
+      "sourceBytes": 192358400,
+      "etag": "\"b772800-547e11cfb53c0\"",
+      "lastModified": "Mon, 06 Feb 2017 18:51:03 GMT",
+      "labelSha256": "94e48716e31bcb080c25091b7ceb079791cc9c0264c3dea7b1ff2d98104e8768",
+      "sha256": "d6c0a984fb744e2b8e3729b1d3404e31360da4712a4070e04253e6738fc66dae",
+      "bytes": 33945600
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H04SE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H04/MDIS_MDR_064PPD_H04SE4.IMG",
+      "byteRange": [
+        14475840,
+        57903359
+      ],
+      "sourceBytes": 246089280,
+      "etag": "\"eab0640-547e11c167200\"",
+      "lastModified": "Mon, 06 Feb 2017 18:50:48 GMT",
+      "labelSha256": "9859bfaf19aadb5b1eb1c5a0eafa2105bec7079833e08172ab8f8474704be43b",
+      "sha256": "7fc28d8910fd818016a0db1827daaa5057185475a5794464058a966d2553b466",
+      "bytes": 43427520
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H04SW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H04/MDIS_MDR_064PPD_H04SW4.IMG",
+      "byteRange": [
+        14475840,
+        57903359
+      ],
+      "sourceBytes": 246089280,
+      "etag": "\"eab0640-547e11c71ff80\"",
+      "lastModified": "Mon, 06 Feb 2017 18:50:54 GMT",
+      "labelSha256": "24c8027d4c72871ee73158d37d37b723e919c9d354f759a5c11f5ca691fa2788",
+      "sha256": "fddc88b714ea6dd9f6409caf0923c1dc5c2133c928a3f4428e56a6da19db1832",
+      "bytes": 43427520
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H05NE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H05/MDIS_MDR_064PPD_H05NE4.IMG",
+      "byteRange": [
+        11315200,
+        45260799
+      ],
+      "sourceBytes": 192358400,
+      "etag": "\"b772800-547e12c89df00\"",
+      "lastModified": "Mon, 06 Feb 2017 18:55:24 GMT",
+      "labelSha256": "b4cdac1aa68325c6c0226931d66ad25aad5449fb29d18cdcaa7729375dfe51e5",
+      "sha256": "a620858c91b12a47d5fe96a696531824d9034bc24ea7c38f918027cc7b9d3412",
+      "bytes": 33945600
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H05NW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H05/MDIS_MDR_064PPD_H05NW4.IMG",
+      "byteRange": [
+        11315200,
+        45260799
+      ],
+      "sourceBytes": 192358400,
+      "etag": "\"b772800-547e12cc6e800\"",
+      "lastModified": "Mon, 06 Feb 2017 18:55:28 GMT",
+      "labelSha256": "303fa392a54ea344d21990029d3398ff2c25a1ba5a07b13b89d59e6690e0f616",
+      "sha256": "f0a5e9ed317b0a41f76c6b6785179b580ba779ed48ee006ae82b7c8e654e9878",
+      "bytes": 33945600
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H05SE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H05/MDIS_MDR_064PPD_H05SE4.IMG",
+      "byteRange": [
+        14475840,
+        57903359
+      ],
+      "sourceBytes": 246089280,
+      "etag": "\"eab0640-547e12d133340\"",
+      "lastModified": "Mon, 06 Feb 2017 18:55:33 GMT",
+      "labelSha256": "aaf03c2856f53937a937503c2b05bc21d88cb31dbac0ceaf5123f2b93af222c7",
+      "sha256": "c3fc5e756d0f10030c9f93a5c6823d952b8702dd37d05217b9282991c7440d88",
+      "bytes": 43427520
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H05SW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H05/MDIS_MDR_064PPD_H05SW4.IMG",
+      "byteRange": [
+        14475840,
+        57903359
+      ],
+      "sourceBytes": 246089280,
+      "etag": "\"eab0640-547e12c3d93c0\"",
+      "lastModified": "Mon, 06 Feb 2017 18:55:19 GMT",
+      "labelSha256": "d0dd38e23e3a9f7a80bddc68d4b122a16fb1172e26035c3ce6da928d5398bf4a",
+      "sha256": "3728e1d54324f01002a48f02e65551b7e60bc5880a290ce4c608f4aa7ccf22c4",
+      "bytes": 43427520
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H06NE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H06/MDIS_MDR_064PPD_H06NE4.IMG",
+      "byteRange": [
+        13271040,
+        53084159
+      ],
+      "sourceBytes": 225607680,
+      "etag": "\"d728000-547e129bcb540\"",
+      "lastModified": "Mon, 06 Feb 2017 18:54:37 GMT",
+      "labelSha256": "bb972f0720359d6c4fd32f7bd13f351224e4fc32cce6b27e1e751e028ab85f85",
+      "sha256": "d96cf1b20681d5acebedc2b1bd8880155492852d066f0dac070699d24b0d887e",
+      "bytes": 39813120
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H06NW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H06/MDIS_MDR_064PPD_H06NW4.IMG",
+      "byteRange": [
+        13271040,
+        53084159
+      ],
+      "sourceBytes": 225607680,
+      "etag": "\"d728000-547e12a554bc0\"",
+      "lastModified": "Mon, 06 Feb 2017 18:54:47 GMT",
+      "labelSha256": "f266147e39f0141ad51c0c5315ee5c28968966857a3b47b293f33b83265d36e6",
+      "sha256": "b2529cdc0846982aad67fd761d26b126c2cc1fd05e36080b26a6ed578dd5dca0",
+      "bytes": 39813120
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H06SE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H06/MDIS_MDR_064PPD_H06SE4.IMG",
+      "byteRange": [
+        13271040,
+        53084159
+      ],
+      "sourceBytes": 225607680,
+      "etag": "\"d728000-547e12a090080\"",
+      "lastModified": "Mon, 06 Feb 2017 18:54:42 GMT",
+      "labelSha256": "0a9272061898ca5b67375028dd499d670dd705b9236a36fbb3499ddbc6bb12b2",
+      "sha256": "b2533368dc16ca547373fd66f633227f6f12455020f5d883d29f5430d7cd3f6b",
+      "bytes": 39813120
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H06SW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H06/MDIS_MDR_064PPD_H06SW4.IMG",
+      "byteRange": [
+        13271040,
+        53084159
+      ],
+      "sourceBytes": 225607680,
+      "etag": "\"d728000-547e12aa19700\"",
+      "lastModified": "Mon, 06 Feb 2017 18:54:52 GMT",
+      "labelSha256": "a8db0991f2a68015912ebafc29d29f08651bd5ff8b3634656aa21fd3c0c54d81",
+      "sha256": "7f52c550400fa251912436b9d5c231692524621e7e3246fecd74cc8dd13a97e6",
+      "bytes": 39813120
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H07NE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H07/MDIS_MDR_064PPD_H07NE4.IMG",
+      "byteRange": [
+        13271040,
+        53084159
+      ],
+      "sourceBytes": 225607680,
+      "etag": "\"d728000-547e12b496fc0\"",
+      "lastModified": "Mon, 06 Feb 2017 18:55:03 GMT",
+      "labelSha256": "4b6bfab824be89bd10625890b1af816f1dad068e11cf4426da40900d4634df33",
+      "sha256": "1f930186c40765122e1555378dd83bd0b3ebe0edf79b11661fd03faeb0f85ac2",
+      "bytes": 39813120
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H07NW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H07/MDIS_MDR_064PPD_H07NW4.IMG",
+      "byteRange": [
+        13271040,
+        53084159
+      ],
+      "sourceBytes": 225607680,
+      "etag": "\"d728000-547e12afd2480\"",
+      "lastModified": "Mon, 06 Feb 2017 18:54:58 GMT",
+      "labelSha256": "af866194ae0ae1b45307230d4dcaf6fb4470739ef5bcf5d1d7e160f68de5e28a",
+      "sha256": "9761f84f85dce3a0fb40a5b7645f50fe75366942bdef77cb3421250f51c450bf",
+      "bytes": 39813120
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H07SE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H07/MDIS_MDR_064PPD_H07SE4.IMG",
+      "byteRange": [
+        13271040,
+        53084159
+      ],
+      "sourceBytes": 225607680,
+      "etag": "\"d728000-547e12b95bb00\"",
+      "lastModified": "Mon, 06 Feb 2017 18:55:08 GMT",
+      "labelSha256": "cbce265ebcd5ab933b12aa6b47688b88e5bcfc6df1bfa4a4e95294afcccc97b8",
+      "sha256": "3dd4600b082efea98b3d3998a53f2a8c8b6ced2abad942dc495e6e35ec7d736a",
+      "bytes": 39813120
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H07SW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H07/MDIS_MDR_064PPD_H07SW4.IMG",
+      "byteRange": [
+        13271040,
+        53084159
+      ],
+      "sourceBytes": 225607680,
+      "etag": "\"d728000-547e12be20640\"",
+      "lastModified": "Mon, 06 Feb 2017 18:55:13 GMT",
+      "labelSha256": "fab37205a647c04467cff1d9fa1d22df7fc9d5390e42dec7e051b8b24fd857a2",
+      "sha256": "25a4f8bf9b83083524b0707b0364dbc7adbbc524d19ac5116147671fbca62104",
+      "bytes": 39813120
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H08NE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H08/MDIS_MDR_064PPD_H08NE4.IMG",
+      "byteRange": [
+        13271040,
+        53084159
+      ],
+      "sourceBytes": 225607680,
+      "etag": "\"d728000-547e135c6fbc0\"",
+      "lastModified": "Mon, 06 Feb 2017 18:57:59 GMT",
+      "labelSha256": "89cbfcf7881ee159703a0fccf7b91c5d9c41e38ae92d511259e2334c3f624e35",
+      "sha256": "058f258e099181676e5782ecfa6ed86eb5a1f87d3226d8250955e019810c9f46",
+      "bytes": 39813120
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H08NW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H08/MDIS_MDR_064PPD_H08NW4.IMG",
+      "byteRange": [
+        13271040,
+        53084159
+      ],
+      "sourceBytes": 225607680,
+      "etag": "\"d728000-547e1351f2300\"",
+      "lastModified": "Mon, 06 Feb 2017 18:57:48 GMT",
+      "labelSha256": "e21462065b28e6d3418d10af5df8cde38ee0df7a5211537c8d92ebbf82dd2292",
+      "sha256": "6f4a83424ed7f7be63f86346ed888628de474d6a370a68bffba8c3f55bd5499f",
+      "bytes": 39813120
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H08SE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H08/MDIS_MDR_064PPD_H08SE4.IMG",
+      "byteRange": [
+        13271040,
+        53084159
+      ],
+      "sourceBytes": 225607680,
+      "etag": "\"d728000-547e136134700\"",
+      "lastModified": "Mon, 06 Feb 2017 18:58:04 GMT",
+      "labelSha256": "5fe64235f9dde270a6304faa225d0a4e7321929d00d0c8c3d886ba63eef6734f",
+      "sha256": "615f8d9783fd3a8e4ce66550b3942319ab04c2e6be46aaa6ede3bbc8d18f2a92",
+      "bytes": 39813120
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H08SW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H08/MDIS_MDR_064PPD_H08SW4.IMG",
+      "byteRange": [
+        13271040,
+        53084159
+      ],
+      "sourceBytes": 225607680,
+      "etag": "\"d728000-547e1357ab080\"",
+      "lastModified": "Mon, 06 Feb 2017 18:57:54 GMT",
+      "labelSha256": "8e8328abe1bdb28b54ccdfd7afaf5f7fdccab3e3c4151b09319c5b47ad1d322a",
+      "sha256": "2a28a3cd4ac057c7fac285f34e00acc0e97ebdd0493605b1e1bd79091d329ecc",
+      "bytes": 39813120
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H09NE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H09/MDIS_MDR_064PPD_H09NE4.IMG",
+      "byteRange": [
+        13271040,
+        53084159
+      ],
+      "sourceBytes": 225607680,
+      "etag": "\"d728000-547e12e075740\"",
+      "lastModified": "Mon, 06 Feb 2017 18:55:49 GMT",
+      "labelSha256": "07db79964b2b13849d592bbb9baa1a040aa8b1ace9e0134e17239a7a87ab2fb5",
+      "sha256": "e3e843a739e849be56dada36222742b540ea0f8cbdde8e6ab30ef9d6a823340d",
+      "bytes": 39813120
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H09NW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H09/MDIS_MDR_064PPD_H09NW4.IMG",
+      "byteRange": [
+        13271040,
+        53084159
+      ],
+      "sourceBytes": 225607680,
+      "etag": "\"d728000-547e12d6ec0c0\"",
+      "lastModified": "Mon, 06 Feb 2017 18:55:39 GMT",
+      "labelSha256": "0c71fa56649dbf243443e4a9c0f600de75c675f2623039680bdbda29260d543a",
+      "sha256": "669270624e3aebc440efee4db6e029756e970f3312282848a44232510acdcb79",
+      "bytes": 39813120
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H09SE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H09/MDIS_MDR_064PPD_H09SE4.IMG",
+      "byteRange": [
+        13271040,
+        53084159
+      ],
+      "sourceBytes": 225607680,
+      "etag": "\"d728000-547e12dbb0c00\"",
+      "lastModified": "Mon, 06 Feb 2017 18:55:44 GMT",
+      "labelSha256": "a608a63dc4d4ad91b6e775cdb43001296e85985630f3c13c681274f318ba9882",
+      "sha256": "ab9d1a335ce08f32b19701f731f93570a9035c69a2a1212ce6ac2f4a63f586ac",
+      "bytes": 39813120
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H09SW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H09/MDIS_MDR_064PPD_H09SW4.IMG",
+      "byteRange": [
+        13271040,
+        53084159
+      ],
+      "sourceBytes": 225607680,
+      "etag": "\"d728000-547e12e62e4c0\"",
+      "lastModified": "Mon, 06 Feb 2017 18:55:55 GMT",
+      "labelSha256": "1a3bce2099af5e633090866f3b6942d2bf083f01c81ca3d31d38a7bfb3c93e32",
+      "sha256": "2592a4cf3bf084b7221b942510b9759f5259ff4e218875d4a2f484c5ae4e4a6c",
+      "bytes": 39813120
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H10NE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H10/MDIS_MDR_064PPD_H10NE4.IMG",
+      "byteRange": [
+        13271040,
+        53084159
+      ],
+      "sourceBytes": 225607680,
+      "etag": "\"d728000-547e123b79200\"",
+      "lastModified": "Mon, 06 Feb 2017 18:52:56 GMT",
+      "labelSha256": "a9df2a8b005fa9f2a3a74c512c1c176ab0e7898296030f010e99be1c9ffe7a54",
+      "sha256": "045cd491bc79b50274ac6fa6ec539d33cfa27df022ce2a3e2457f355c72bd36c",
+      "bytes": 39813120
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H10NW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H10/MDIS_MDR_064PPD_H10NW4.IMG",
+      "byteRange": [
+        13271040,
+        53084159
+      ],
+      "sourceBytes": 225607680,
+      "etag": "\"d728000-547e124502880\"",
+      "lastModified": "Mon, 06 Feb 2017 18:53:06 GMT",
+      "labelSha256": "87081ac31f5d7852d39e8351300b527400ef7ad613293fcdd67de9b9f3342cb1",
+      "sha256": "f19719cfc2ecda6c15c552edf0bd2c753d588d4b5aa7d12e8cb6b5444cad4d4f",
+      "bytes": 39813120
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H10SE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H10/MDIS_MDR_064PPD_H10SE4.IMG",
+      "byteRange": [
+        13271040,
+        53084159
+      ],
+      "sourceBytes": 225607680,
+      "etag": "\"d728000-547e124abb600\"",
+      "lastModified": "Mon, 06 Feb 2017 18:53:12 GMT",
+      "labelSha256": "2b5a320fdfcfcf1c5c410751878ad69ccf177502d238916446817f8493672e04",
+      "sha256": "6b8ec31a284e1a57a460888d89fa3f5ceca87435d660b09213f3f4b3b49d6b60",
+      "bytes": 39813120
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H10SW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H10/MDIS_MDR_064PPD_H10SW4.IMG",
+      "byteRange": [
+        13271040,
+        53084159
+      ],
+      "sourceBytes": 225607680,
+      "etag": "\"d728000-547e12403dd40\"",
+      "lastModified": "Mon, 06 Feb 2017 18:53:01 GMT",
+      "labelSha256": "d7f8c788fca5a1592a041fba2ac10536dc601a872a4c36b5c77137cbb9f0a22d",
+      "sha256": "4b14c0cc91f6933239765495b807d0dbe6e8c7d2453cbf221a55bbebede78f6e",
+      "bytes": 39813120
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H11NE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H11/MDIS_MDR_064PPD_H11NE4.IMG",
+      "byteRange": [
+        14475840,
+        57903359
+      ],
+      "sourceBytes": 246089280,
+      "etag": "\"eab0640-547e122e1f280\"",
+      "lastModified": "Mon, 06 Feb 2017 18:52:42 GMT",
+      "labelSha256": "dd10ac5e4fc407ec5f9505e6a1b60ba9baf318948239f4a3a2a5db7ea729d78f",
+      "sha256": "8f46da7aef8d94e4d66a19ee72bc89fffaeb53140bda42da37967d11e187099e",
+      "bytes": 43427520
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H11NW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H11/MDIS_MDR_064PPD_H11NW4.IMG",
+      "byteRange": [
+        14475840,
+        57903359
+      ],
+      "sourceBytes": 246089280,
+      "etag": "\"eab0640-547e122866500\"",
+      "lastModified": "Mon, 06 Feb 2017 18:52:36 GMT",
+      "labelSha256": "43c06223ef54c00032e69424b859a26e7ffc5501b8039d0b13593619d11bfaf6",
+      "sha256": "7e8409d62d634f1819614e9dfa74de260ad804a926440131b8baac0373b9af17",
+      "bytes": 43427520
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H11SE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H11/MDIS_MDR_064PPD_H11SE4.IMG",
+      "byteRange": [
+        11315200,
+        45260799
+      ],
+      "sourceBytes": 192358400,
+      "etag": "\"b772800-547e1232e3dc0\"",
+      "lastModified": "Mon, 06 Feb 2017 18:52:47 GMT",
+      "labelSha256": "681a726490b7a8b5668715d01f838ad894fef82bea79660fdb88db0a28471fbd",
+      "sha256": "82964e423c00d61d285127e38e1c5de7ddeae8ad2ed2e1e8d5f4983def13ac1d",
+      "bytes": 33945600
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H11SW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H11/MDIS_MDR_064PPD_H11SW4.IMG",
+      "byteRange": [
+        11315200,
+        45260799
+      ],
+      "sourceBytes": 192358400,
+      "etag": "\"b772800-547e1236b46c0\"",
+      "lastModified": "Mon, 06 Feb 2017 18:52:51 GMT",
+      "labelSha256": "4b2fb39621ef3cc2c58fc4a64452c0425e0afccfc51eb24fc6d35a95a58b5c8c",
+      "sha256": "4ffef578582b4933ade423f012205bc0a63f01dd2250b0cb2f8562a55bba90ae",
+      "bytes": 33945600
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H12NE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H12/MDIS_MDR_064PPD_H12NE4.IMG",
+      "byteRange": [
+        14475840,
+        57903359
+      ],
+      "sourceBytes": 246089280,
+      "etag": "\"eab0640-547e1274b1900\"",
+      "lastModified": "Mon, 06 Feb 2017 18:53:56 GMT",
+      "labelSha256": "feeb72bc302d58a0daf62482040f30b7e34e7eb5b2952cdf7d9afa1db016dc44",
+      "sha256": "06100166d8e1cae04e74ea2331fc90843ec75e6b8e876d64db7484f5ce24313e",
+      "bytes": 43427520
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H12NW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H12/MDIS_MDR_064PPD_H12NW4.IMG",
+      "byteRange": [
+        14475840,
+        57903359
+      ],
+      "sourceBytes": 246089280,
+      "etag": "\"eab0640-547e127e3af80\"",
+      "lastModified": "Mon, 06 Feb 2017 18:54:06 GMT",
+      "labelSha256": "c1dd811d184dbcfa9c0327e2f54b5546ecbfeb951e6171483b543fbd990895d9",
+      "sha256": "d04920596e9d94292e251be6cd6c5616854ce9bdb4c60004fdb2e891ccd4320b",
+      "bytes": 43427520
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H12SE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H12/MDIS_MDR_064PPD_H12SE4.IMG",
+      "byteRange": [
+        11315200,
+        45260799
+      ],
+      "sourceBytes": 192358400,
+      "etag": "\"b772800-547e127976440\"",
+      "lastModified": "Mon, 06 Feb 2017 18:54:01 GMT",
+      "labelSha256": "ec19c2ea5332d9ac252848ce91e2a79d94de91f2e9c52e1024dfc061d4d46c42",
+      "sha256": "fc5ab17f7c729fc5c38ff143d67778e55fcfa1bce4694f00904297c4d0478652",
+      "bytes": 33945600
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H12SW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H12/MDIS_MDR_064PPD_H12SW4.IMG",
+      "byteRange": [
+        11315200,
+        45260799
+      ],
+      "sourceBytes": 192358400,
+      "etag": "\"b772800-547e1282ffac0\"",
+      "lastModified": "Mon, 06 Feb 2017 18:54:11 GMT",
+      "labelSha256": "7e7010e0d31446f78113a24031d7a1642ae886e5684ea89de20e038cb3816fb3",
+      "sha256": "77e90ccb02280225b0ae2b24240a90e5a53d3b4e38ef00519202c23287619069",
+      "bytes": 33945600
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H13NE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H13/MDIS_MDR_064PPD_H13NE4.IMG",
+      "byteRange": [
+        14475840,
+        57903359
+      ],
+      "sourceBytes": 246089280,
+      "etag": "\"eab0640-547e11a3d6c40\"",
+      "lastModified": "Mon, 06 Feb 2017 18:50:17 GMT",
+      "labelSha256": "984e40c3de2ff6fe4d33a587b542cbc39ed901920e93f9c41e12fdb6a3f297cd",
+      "sha256": "1c7d1afb57ceae0ed3911e51f45b7b300e36d3f782e69b6044057dcb8072c2f9",
+      "bytes": 43427520
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H13NW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H13/MDIS_MDR_064PPD_H13NW4.IMG",
+      "byteRange": [
+        14475840,
+        57903359
+      ],
+      "sourceBytes": 246089280,
+      "etag": "\"eab0640-547e119e1dec0\"",
+      "lastModified": "Mon, 06 Feb 2017 18:50:11 GMT",
+      "labelSha256": "9990ada3623e8aaa572c45485bb73655a9738701ff4268c1bd5678980dce686c",
+      "sha256": "7d78f348cea5d7c0595bd47d628f047de6013dc9a45ef7b0515185d7f6afcd90",
+      "bytes": 43427520
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H13SE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H13/MDIS_MDR_064PPD_H13SE4.IMG",
+      "byteRange": [
+        11315200,
+        45260799
+      ],
+      "sourceBytes": 192358400,
+      "etag": "\"b772800-547e11a89b780\"",
+      "lastModified": "Mon, 06 Feb 2017 18:50:22 GMT",
+      "labelSha256": "fcc299533390616e32b4999bed456953467ebcc0ebc9cbfd83fa86849bcf6ac8",
+      "sha256": "d03594060c36c76d2a2e2081623c664f68bb657f6ae64df702b2460be0ab8bf0",
+      "bytes": 33945600
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H13SW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H13/MDIS_MDR_064PPD_H13SW4.IMG",
+      "byteRange": [
+        11315200,
+        45260799
+      ],
+      "sourceBytes": 192358400,
+      "etag": "\"b772800-547e119a4d5c0\"",
+      "lastModified": "Mon, 06 Feb 2017 18:50:07 GMT",
+      "labelSha256": "41fd60ad58356bfea7434261df97e59bd26a7f7f9f94df088bc97d9a4dcc77e2",
+      "sha256": "60fca16449b4e13523b7fa49ff670983f8a24249ccc9d7566ed759755f26e086",
+      "bytes": 33945600
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H14NE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H14/MDIS_MDR_064PPD_H14NE4.IMG",
+      "byteRange": [
+        14475840,
+        57903359
+      ],
+      "sourceBytes": 246089280,
+      "etag": "\"eab0640-547e128c89140\"",
+      "lastModified": "Mon, 06 Feb 2017 18:54:21 GMT",
+      "labelSha256": "7a5debb6efc0238b58396c89db934cffa957f95384dadf33bd1aa5bb4a97c97b",
+      "sha256": "67f2238a683713d2f40ba5a3966ff72eb6347ede3918a5537fb282da636a7a64",
+      "bytes": 43427520
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H14NW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H14/MDIS_MDR_064PPD_H14NW4.IMG",
+      "byteRange": [
+        14475840,
+        57903359
+      ],
+      "sourceBytes": 246089280,
+      "etag": "\"eab0640-547e129241ec0\"",
+      "lastModified": "Mon, 06 Feb 2017 18:54:27 GMT",
+      "labelSha256": "b858e311abe530ef2bdb7794bd694525e932cd48e7850c6304a617fe86cbb7ef",
+      "sha256": "030824cc6b2357f87e5deca071ce96461baeae2eaeec6e3849b9c2bb73475c28",
+      "bytes": 43427520
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H14SE4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H14/MDIS_MDR_064PPD_H14SE4.IMG",
+      "byteRange": [
+        11315200,
+        45260799
+      ],
+      "sourceBytes": 192358400,
+      "etag": "\"b772800-547e129706a00\"",
+      "lastModified": "Mon, 06 Feb 2017 18:54:32 GMT",
+      "labelSha256": "c4ab6249516fe2527527c0643e276038b44131cd7ff07c2d4ebdeacfb26b198a",
+      "sha256": "c40abedbe93847639a9cbcf7c6779686d20312f0c32bbc2c61dd8469d01c85b2",
+      "bytes": 33945600
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H14SW4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H14/MDIS_MDR_064PPD_H14SW4.IMG",
+      "byteRange": [
+        11315200,
+        45260799
+      ],
+      "sourceBytes": 192358400,
+      "etag": "\"b772800-547e1287c4600\"",
+      "lastModified": "Mon, 06 Feb 2017 18:54:16 GMT",
+      "labelSha256": "128dae0d5357af102a84454a88d5d9dff09783beef310ba289f37a616382ade8",
+      "sha256": "8aaa339b6868d2bb95f25c483b3f191a253ba8d06dc18f0aef21bb6a75720ed5",
+      "bytes": 33945600
+    },
+    {
+      "product": "MDIS_MDR_064PPD_H15SP4",
+      "url": "https://planetarydata.jpl.nasa.gov/img/data/messenger/msgrmds_5001/MDR/H15/MDIS_MDR_064PPD_H15SP4.IMG",
+      "byteRange": [
+        45859984,
+        183439935
+      ],
+      "sourceBytes": 779619728,
+      "etag": "\"2e780d90-547e1259097c0\"",
+      "lastModified": "Mon, 06 Feb 2017 18:53:27 GMT",
+      "labelSha256": "966bb29c56e621206bfd0e8774277680f5e605811ebb2a198c26f55597e047bb",
+      "sha256": "06576fb63cb1fe5d8911cc711db90763b74cd487b594d86deee49c30c1504483",
+      "bytes": 137579952
+    }
+  ],
+  "sourceSha256": "99dab7a428a9cd52bb463894bc1828d529cedd50e92cfd642a34ff277759bb9f",
+  "deliveredSha256": "2ed29083394b16cf906af7d32629ef2683e3b2747e3d4b7e0c5d4f0a3fdbcf87",
+  "meanChannelError": 0.9930560986200968,
+  "p99ChannelError": 4.0,
+  "bytes": 1105198,
+  "buildSeconds": 16.123048550998647
+}

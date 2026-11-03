@@ -2,7 +2,7 @@
 """Build a photometrically corrected Mars color preview from MOC-WA.
 
 The source is the USGS Mars Year 24-28 MOC-WA red/blue reflectance archive.
-This first pass averages one solar-longitude bin across years, reprojects its
+This pass averages selected solar-longitude bins across years, reprojects its
 equatorial and polar maps to a global equirectangular raster, and synthesizes
 green as the mean of red and blue. Source files and previews stay in the local
 terrain cache; this does not publish a runtime texture.
@@ -15,6 +15,7 @@ import json
 import math
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -27,6 +28,8 @@ SOURCE_ROOT = ROOT / ".terrain-cache/mars-moc-wa/source"
 PRODUCT = "https://asc-pds-individual-investigations.s3.us-west-2.amazonaws.com/mars_mgs_moc-wa_photometric-controls_robbins_2023/data"
 RADIUS = 3_396_190.0
 REGIONS = (("equatorial", "eq"), ("polarnorth", "np"), ("polarsouth", "sp"))
+OFFLINE = False
+KNOWN_MISSING: set[Path] = set()
 
 
 def source_path(year: int, band: str, longitude: int, region: str, suffix: str) -> Path:
@@ -42,6 +45,10 @@ def fetch(path: Path, year: int, band: str, longitude: int, region: str, suffix:
                     return True
         except Exception:
             path.unlink(missing_ok=True)
+    if OFFLINE:
+        if path in KNOWN_MISSING:
+            return False
+        raise ValueError(f'Missing cached source {path}; run once without --offline')
     relative = f"{band}/incidence_75/{region}/Ls02/{path.name}"
     url = f"{PRODUCT}/{relative}"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -123,10 +130,13 @@ def srgb(linear: np.ndarray) -> np.ndarray:
 
 
 def main() -> None:
+    global OFFLINE, KNOWN_MISSING
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--years", default="25,26,27,28", help="comma-separated Mars years")
     parser.add_argument("--longitudes", default="34,124,214,304", help="comma-separated seasonal bins (0-358)")
     parser.add_argument("--width", type=int, default=4096)
+    parser.add_argument("--download-workers", type=int, default=4)
+    parser.add_argument("--offline", action="store_true", help="Use checksum-verified source files and missing coverage from the previous successful report")
     parser.add_argument("--output", type=Path, default=ROOT / ".terrain-cache/mars-moc-wa/mocwa-ls034.png")
     args = parser.parse_args()
     years = [int(value) for value in args.years.split(",")]
@@ -139,6 +149,29 @@ def main() -> None:
     if width < 512 or width % 2:
         parser.error("width must be an even value of at least 512")
     height = width // 2
+    jobs = [(year,band,longitude,region,suffix) for year in years for band in ('red','blue')
+            for longitude in longitudes for region,suffix in REGIONS]
+    if args.offline:
+        previous = json.loads(args.output.with_suffix('.json').read_text())
+        if previous['marsYears'] != years or previous['solarLongitudeDegrees'] != longitudes:
+            raise ValueError('Offline selections must match the previous successful report')
+        available = previous['redSources'] + previous['blueSources']
+        for entry in available:
+            path = ROOT / entry['path']
+            if not path.exists() or sha256(path) != entry['sha256']:
+                raise ValueError(f'Changed cached source {path}')
+        KNOWN_MISSING = {source_path(*job) for job in jobs} - {ROOT / entry['path'] for entry in available}
+        OFFLINE = True
+    def prefetch(job):
+        year,band,longitude,region,suffix = job
+        result = fetch(source_path(*job),year,band,longitude,region,suffix)
+        return result
+    started = time.perf_counter()
+    with ThreadPoolExecutor(max_workers=max(1,min(8,args.download_workers))) as pool:
+        for i,_ in enumerate(pool.map(prefetch,jobs),1):
+            if i % 12 == 0: print(f'Source files checked: {i}/{len(jobs)}',flush=True)
+    source_seconds = time.perf_counter()-started
+    print(f'Source preparation: {source_seconds:.1f}s',flush=True)
     red, red_weight, red_sources = collect_band(years, "red", longitudes, width, height)
     blue, blue_weight, blue_sources = collect_band(years, "blue", longitudes, width, height)
     with rasterio.open(ROOT / "public/textures/mars.jpg") as source:
@@ -169,6 +202,7 @@ def main() -> None:
         "channels": {"red": "MOC-WA red reflectance", "green": "mean(red, blue), synthetic", "blue": "MOC-WA blue reflectance"},
         "redSources": red_sources, "blueSources": blue_sources,
         "output": str(args.output.resolve().relative_to(ROOT)), "outputSha256": sha256(args.output),
+        "buildSeconds": time.perf_counter()-started, "sourcePreparationSeconds": source_seconds,
     }
     report_path = args.output.with_suffix(".json")
     report_path.write_text(json.dumps(report, indent=2) + "\n")

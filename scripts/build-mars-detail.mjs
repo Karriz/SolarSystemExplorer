@@ -1,4 +1,4 @@
-// Offline, seamless normal/roughness data for Mars. No lighting or measured
+// Offline, seamless packed normal/reflectance/roughness data for Mars. No lighting or measured
 // topography is baked into this small reusable material texture. The Martian
 // surface reads as dust and sand with wind-formed ripples and sparse angular
 // rock fragments, so the fine grain stays smoother and sparser than the Moon's.
@@ -88,7 +88,14 @@ function bakeMaterial(file, meters, medium = false) {
     const length = Math.hypot(dx, dy, 1), offset = y * (size * 4 + 1) + 1 + x * 4
     raw[offset] = Math.round((-.5 * dx / length + .5) * 255)
     raw[offset + 1] = Math.round((-.5 * dy / length + .5) * 255)
-    raw[offset + 2] = Math.round((.5 / length + .5) * 255)
+    // RG normal XY, B generated reflectance variation, A roughness.
+    const dustPatch = noise(x / size * 8 + 1.7, y / size * 8 + 2.1, 8)
+    const sandBands = .5 + .5 * Math.sin(6.2831853 * (x / size * 16
+      + 2 * (noise(x / size * 6, y / size * 6, 6) - .5)))
+    const rippleCover = Math.max(0, noise(x / size * 6 + 9.1, y / size * 6 + 4.2, 6) - .42) * 2.4
+    const brightness = .5 + (dustPatch - .5) * .8 + (sandBands - .5) * .1 * rippleCover
+      - rockCover[y * size + x] * .22
+    raw[offset + 2] = Math.round(Math.max(0, Math.min(1, brightness)) * 255)
     const dust = noise(x / size * 16, y / size * 16, 16)
     const sand = medium ? Math.max(0, noise(x / size * 8, y / size * 8, 8) - .4) * .03 : 0
     const roughness = .965 + dust * .02 - sand - rockCover[y * size + x] * .06 + (hash(x, y, 7) - .5) * .012

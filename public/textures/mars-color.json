@@ -1,0 +1,132 @@
+{
+  "schema": 1,
+  "width": 4096,
+  "height": 2048,
+  "sourceSha256": "93b8b25e061c7d0696d17fbaca6e86913ae63ca34a50b7d23646805a40fb72be",
+  "source": "https://astrogeology.usgs.gov/search/map/mars_year_24_28_moc_wa_red_and_blue_2023",
+  "doi": "10.17189/kxff-cs44",
+  "credit": "USGS / NASA / SwRI \u00b7 MGS MOC-WA \u00b7 Stuart Robbins (2023)",
+  "channels": {
+    "red": "MOC-WA red reflectance",
+    "green": "mean(red, blue), synthetic",
+    "blue": "MOC-WA blue reflectance"
+  },
+  "marsYears": [
+    25,
+    26,
+    27,
+    28
+  ],
+  "solarLongitudeDegrees": [
+    34,
+    124,
+    214,
+    304
+  ],
+  "validCoverageFraction": 1.0,
+  "colorTreatment": "Source sRGB, no additional gain or palette remapping; estimated green",
+  "selected": "q95",
+  "candidates": [
+    {
+      "name": "q80",
+      "bytes": 68644,
+      "encodeSeconds": 0.6733675300001778,
+      "decodeSeconds": 0.076434777999566,
+      "meanChannelError": 0.834662139415741,
+      "p99ChannelError": 4.0,
+      "maxChannelError": 22.0,
+      "meanDeltaE76": 0.9297627806663513,
+      "p99DeltaE76": 2.9968879222869873
+    },
+    {
+      "name": "q90",
+      "bytes": 139464,
+      "encodeSeconds": 0.7499371989997599,
+      "decodeSeconds": 0.09635835100016266,
+      "meanChannelError": 0.6890795826911926,
+      "p99ChannelError": 3.0,
+      "maxChannelError": 15.0,
+      "meanDeltaE76": 0.8307331800460815,
+      "p99DeltaE76": 2.334077835083008
+    },
+    {
+      "name": "q95",
+      "bytes": 249594,
+      "encodeSeconds": 0.8044949460008866,
+      "decodeSeconds": 0.08894457699989289,
+      "meanChannelError": 0.6275137066841125,
+      "p99ChannelError": 3.0,
+      "maxChannelError": 13.0,
+      "meanDeltaE76": 0.7795566320419312,
+      "p99DeltaE76": 2.0061252117156982
+    },
+    {
+      "name": "lossless",
+      "bytes": 2289116,
+      "encodeSeconds": 4.306354069000008,
+      "decodeSeconds": 0.09815480900033435,
+      "meanChannelError": 0.0,
+      "p99ChannelError": 0.0,
+      "maxChannelError": 0.0,
+      "meanDeltaE76": 0.0,
+      "p99DeltaE76": 0.0
+    }
+  ],
+  "sourcePngBytes": 3274208,
+  "previousVectorBytes": 1512697,
+  "sourceMedianSrgb": [
+    104.0,
+    86.0,
+    60.0
+  ],
+  "sourceRebuildSeconds": 42.97440433400061,
+  "sourceInputBytes": 689108875,
+  "controlSamples": [
+    {
+      "lat": -12,
+      "lon": -70,
+      "srgb": [
+        93.0,
+        79.0,
+        62.00000000000001
+      ]
+    },
+    {
+      "lat": 20,
+      "lon": 20,
+      "srgb": [
+        114.0,
+        92.05590217224442,
+        62.00000000000001
+      ]
+    },
+    {
+      "lat": 10,
+      "lon": 70,
+      "srgb": [
+        90.00000000000001,
+        78.0,
+        63.0
+      ]
+    },
+    {
+      "lat": 10,
+      "lon": 179.9,
+      "srgb": [
+        111.0,
+        91.0,
+        63.9001945058867
+      ]
+    },
+    {
+      "lat": 85,
+      "lon": 0,
+      "srgb": [
+        119.22721382989131,
+        103.84602632334607,
+        84.47143748101583
+      ]
+    }
+  ],
+  "deliveredSha256": "aecfe98f6050a0d576b2b9e732b4d1f23b726497a1e40970798011d3ea9b75b7"
+}

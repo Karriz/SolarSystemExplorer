@@ -5,7 +5,19 @@ Status: Earth LOD, hosted color, focused shadows, and view-centered coverage imp
 
 ## Implementation status
 
-Moon and Mars now render their base globes and streamed terrain with six equiangular cube faces. The shared numeric adapter samples each body's existing measured geographic elevation release onto cube meshes at runtime. Mars uses the global 200 m MOLA–HRSC v2 release and smoothed MOC-WA color default. Its geographic height pyramid uses 129×129 samples through level 9 (approximately 163 m delivery spacing), with cube meshes refining through level 10. Mars color is sampled by surface direction per fragment to preserve geographic alignment at cube edges, poles, and the dateline. Both bodies retain the hillshade toggle and terrain exaggeration. See the [Mars upgrade results](terrain-pilot-results.md#global-mars-molahrsc-200-m-upgrade--2026-11-02) for source checks, derived sizes, dateline processing and browser coverage. The Mars browser checks are available as `npm run mars:check-cube` and `npm run mars:check-cube-colors`.
+November 3 Earth update: [Earth surface rendering](earth-surface.md) replaces
+Sentinel RGB streaming with compact NASA color, OpenFreeMap material/water masks
+and shared generated ground detail. Earlier hosted-color findings below describe
+the preceding implementation.
+
+
+The [global surface rollout](global-surface-results.md) now makes continuous color and streamed ~1 km hillshade the Moon/Mars defaults. Numeric validation covers all 6,278 shading pages; bulk payload is about 162 MiB with an 8.3 MiB active R8 page pool. Coarse fallbacks ship with the lean app; full hillshade releases are hosted separately from app assets.
+
+The November 3 [Mars color review](mars-color-review.md) replaces the ten-region Mars default with continuous, source-derived MOC-WA color. The compact map is 244 KiB; the old regions and a lossless same-source reference remain available for comparison. This preserves measured red/blue regional variation with estimated green, without a replacement palette.
+
+The November 3 [relief readability pilot](relief-shading-pilot.md) established weighted multidirectional shading and a restrained slope accent. Its bounded Valles texture experiment is superseded by the global default described above.
+
+Moon and Mars now render their base globes and streamed terrain with six equiangular cube faces. The shared numeric adapter samples each body's existing measured geographic elevation release onto cube meshes at runtime. Mars uses the global 200 m MOLA–HRSC v2 release and continuous MOC-WA color default. Its geographic height pyramid uses 129×129 samples through level 9 (approximately 163 m delivery spacing), with cube meshes refining through level 10. Mars color is sampled by surface direction per fragment to preserve geographic alignment at cube edges, poles, and the dateline. Both bodies retain the hillshade toggle and terrain exaggeration. See the [Mars upgrade results](terrain-pilot-results.md#global-mars-molahrsc-200-m-upgrade--2026-11-02) for source checks, derived sizes, dateline processing and browser coverage. The Mars browser checks are available as `npm run mars:check-cube` and `npm run mars:check-cube-colors`.
 
 The Moon now uses one whole-globe LOLA LDEM_256 release (approximately 118 m source spacing), replacing the old approximately 474 m baseline. The app no longer loads the Hadley SLDEM overlay. The current CGI Moon Kit texture remains in use by user choice: the exact global corrected Kaguya reflectance product was not available from the checked official download services, and the regional alternative is not substituted. See [global Moon results](terrain-pilot-results.md#global-moon-elevation--2026-11-01).
 

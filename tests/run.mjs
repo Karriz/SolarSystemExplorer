@@ -6,6 +6,7 @@ import './terrain.test.mjs'
 import './terrainPilot.test.mjs'
 import './terrariumDecode.test.mjs'
 import './earthImagery.test.mjs'
+import './earthSurface.test.mjs'
 
 import './terrainSurface.test.mjs'
 

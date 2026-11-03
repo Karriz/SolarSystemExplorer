@@ -71,7 +71,7 @@ try {
       const terrain = terrainMetrics(metrics, body)
       assert.ok(terrain.memoryBytes <= 48*1024*1024)
       assert.ok(terrain.triangles <= terrain.triangleBudget)
-      if (body === 'earth') assert.ok(terrain.imagery.memoryBytes <= 32*1024*1024)
+      if (body === 'earth') assert.ok(terrain.surface.vectors.memoryBytes <= 32*1024*1024)
       assert.equal(terrain.failed,0)
       assert.ok(Math.abs(metrics.altitudeMeters-altitude)<2, `Altitude ${metrics.altitudeMeters}`)
       const on = await frames(page)
@@ -79,7 +79,7 @@ try {
       await page.evaluate(() => window.terrainPilot.detail(false))
       const off = await frames(page)
       await page.screenshot({path:resolve(output,`${viewportName}-${id}-${altitude}-plain.png`)})
-      const colorMetrics = body === 'earth' ? (await page.evaluate(() => window.terrainPilot.metrics())).regional.earth.imagery : undefined
+      const colorMetrics = body === 'earth' ? (await page.evaluate(() => window.terrainPilot.metrics())).regional.earth.surface.vectors : undefined
       const record = {viewportName,viewport,id,requestedAltitudeMeters:altitude,settleMs,metrics,colorMetrics,detailComparison:body === 'moon',detailOn:on,detailOff:off,glInfo,errors:[...errors]}
       report.cases.push(record)
       await writeFile(resolve(output,'results.json'),JSON.stringify(report,null,2)+'\n')

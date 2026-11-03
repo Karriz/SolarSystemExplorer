@@ -51,7 +51,7 @@ try {
     // settled views so software rasterization cannot delay downloads.
     s.renderer.render = () => {}
   })
-  await page.waitForFunction(() => __marsUpgrade.marsVectorColor.texture?.image?.width > 0, null, { timeout: 120000 })
+  await page.waitForFunction(() => (__marsUpgrade.marsColorTexture.texture ?? __marsUpgrade.marsVectorColor.texture)?.image?.width > 0, null, { timeout: 120000 })
   const settle = async () => {
     let previous = '', stable = 0
     for (let i = 0; i < 480; i++) {

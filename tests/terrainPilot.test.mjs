@@ -261,7 +261,6 @@ test('view-centered native roots wrap the date line and retain polar fallback',(
 
 test('dense Earth refinement remains within visible triangle and allocation budgets',async t=>{
   const body=new THREE.Mesh(new THREE.SphereGeometry(1),new THREE.MeshStandardMaterial()),state=surfaceState(),layer=new RegionalTerrainLayer(body,'earth',state)
-  layer.imagery.dispose();layer.imagery=undefined // isolate terrain selection from remote color requests
   const root=mercatorAddress(25,60.38,13)
   layer.addSource({id:'dense',body:'earth',sampleSize:129,root,maxZoom:15,minHeight:0,maxHeight:200,resolution:2,credit:'test',url:'test',bounds:mercatorBounds,
     load:async()=>({heights:new Float32Array(129*129).fill(100),sampleSize:129,decodeMs:0,transferBytes:100})})
@@ -274,7 +273,7 @@ test('dense Earth refinement remains within visible triangle and allocation budg
 
 test('hidden parent geometry is rebuilt from cached heights without redownloading under pressure',async t=>{
   const body=new THREE.Mesh(new THREE.SphereGeometry(1),new THREE.MeshStandardMaterial()),layer=new RegionalTerrainLayer(body,'earth',surfaceState()),counts=new Map()
-  layer.imagery.dispose();layer.imagery=undefined;layer.budget=20*1024*1024
+  layer.budget=20*1024*1024
   const root=mercatorAddress(25,60.38,13)
   layer.addSource({id:'pressure',body:'earth',sampleSize:129,root,maxZoom:15,minHeight:0,maxHeight:200,resolution:2,credit:'test',url:'test',bounds:mercatorBounds,
     load:async a=>{const k=tileKey(a);counts.set(k,(counts.get(k)??0)+1);return{heights:new Float32Array(129*129).fill(100),sampleSize:129,decodeMs:0,transferBytes:100}}})
@@ -313,7 +312,6 @@ test('fallback clipping follows visible leaves when parent GPU geometry is evict
 
 test('negative measured land elevations are retained rather than flattened as ocean',async t=>{
   const {layer,camera}=setup(t,async()=>({heights:new Float32Array(65*65).fill(-75),transferBytes:100,decodeMs:0}),'earth')
-  layer.imagery.dispose();layer.imagery=undefined
   for(let i=0;i<3;i++){layer.update(camera,900,performance.now()+i*200,true);await flush()}
   const point=layer.hitGround(new THREE.Ray(camera.position.clone(),camera.position.clone().negate().normalize()))
   assert.ok(point)

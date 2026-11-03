@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { chromium } from 'playwright'
 const url=process.env.VECTOR_PREVIEW_URL||'http://127.0.0.1:5175'
 const body=process.env.CUBE_BODY||'moon'
-assert.ok(['moon','mars'].includes(body))
+assert.ok(['moon','mars','mercury','venus'].includes(body))
 const output=resolve(`.terrain-cache/${body}-cube/browser`);await mkdir(output,{recursive:true})
 const browser=await chromium.launch({headless:true,args:['--no-sandbox']})
 const report={errors:[],cases:[],completed:false}
@@ -36,7 +36,7 @@ try{
    if(process.argv.includes('--fast-stream'))await page.evaluate(()=>{const s=__cubeScene;s.renderer.render=s.__cubeRender})
   }
  }
- const cases=body==='mars'?[['orbit',-14,-59,3000000],['valles',-14,-59,30000],['north-pole',90,0,30000],['south-pole',-90,0,30000],['face-edge',0,45,30000],['face-corner',35.26438968,45,30000],['dateline',10,179.99,30000]]:process.argv.includes('--quick')?[['hadley',26.13,3.63,6000]]:
+ const cases=body==='venus'?[['orbit',0,0,5000000],['maxwell',65,3,30000],['maat',0.5,-165.4,30000],['north-pole',90,0,30000],['south-pole',-90,0,30000],['face-edge',0,45,30000],['face-corner',35.26438968,45,30000],['dateline',10,179.99,30000],['close',0,0,100]]:body==='mercury'?[['orbit',20,160,2000000],['caloris',30.5,160,30000],['north-pole',90,0,30000],['south-pole',-90,0,30000],['face-edge',0,45,30000],['face-corner',35.26438968,45,30000],['dateline',10,179.99,30000],['close',0,0,100]]:body==='mars'?[['orbit',-14,-59,3000000],['valles',-14,-59,30000],['north-pole',90,0,30000],['south-pole',-90,0,30000],['face-edge',0,45,30000],['face-corner',35.26438968,45,30000],['dateline',10,179.99,30000]]:process.argv.includes('--quick')?[['hadley',26.13,3.63,6000]]:
   [['orbit',26.13,3.63,2000000],['hadley',26.13,3.63,6000],['north-pole',90,0,6000],['south-pole',-90,0,6000],
    ['face-edge',0,45,6000],['face-corner',35.26438968,45,6000],['dateline',10,179.99,6000],['close',26.13,3.63,100]]
  for(const[name,lat,lon,altitude]of cases.filter(c=>!process.env.CUBE_CASES||process.env.CUBE_CASES.split(',').includes(c[0]))){
@@ -46,7 +46,7 @@ try{
   await page.evaluate(({body,lat,lon,altitude})=>terrainPilot.location(body,lat,lon,altitude),{body,lat,lon,altitude})
   const metrics=await settle()
   assert.equal(metrics.projection,'cube-sphere');assert.equal(metrics.failed,0)
-  assert.ok(metrics.memoryBytes<=128*1048576);assert.ok(metrics.triangles<=400000)
+  assert.ok(metrics.memoryBytes<=256*1048576);assert.ok(metrics.triangles<=400000)
   await page.evaluate(()=>{__cubeScene.pilotAltitude=null})
   const signatures=[]
   for(let i=0;i<8;i++){

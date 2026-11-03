@@ -5,13 +5,15 @@ import { cubeChildren,cubeDirection,cubeFaceUv,cubeGrid,cubeKey,cubeRoots,cubeTe
 import { PlanetHeightSource,heightAddress,heightKey } from './PlanetHeightSource.ts'
 import { captureTerrainEdge,type TerrainEdge } from './terrainEdges.ts'
 import { firstTerrainSurfaceHit,sphereSurfaceSampler,type TerrainSurfaceSampler } from './terrainSurface.ts'
-import { configureMoonSurfaceMaterial,configureMoonTerrainDepth,MARS_DETAIL_PROFILE,MOON_DETAIL_PROFILE,type MoonShade } from './moonSurfaceMaterial.ts'
+import { configurePlanetSurfaceMaterial,configurePlanetTerrainDepth,type PlanetShade } from './planetSurfaceMaterial.ts'
+import { planetRenderProfiles, type SolidSurfaceProfile } from './planetRenderProfiles.ts'
 import type { SurfaceState } from './surfaceMaterial.ts'
 import type { TerrainStatus } from './GlobeTerrainLayer.ts'
 import type { TileAddress } from './surfaceTiles.ts'
 import { stitchCubeEdges } from './cubeTerrainEdges.ts'
 import { configureTerrainHillshade, type HillshadeState } from './terrainHillshade.ts'
 import { configureCubeColorMaterial } from './cubeColorMaterial.ts'
+import type { GlobalHillshadeLayer } from './GlobalHillshadeLayer.ts'
 
 // Leaf cap stays under the 400k triangle budget (2304 tris per 33x33 leaf,
 // so ~173 leaves max); the byte cap is a budget ceiling, not an allocation,
@@ -43,35 +45,38 @@ export class CubeTerrainLayer {
   private reported=''
   private material:THREE.MeshStandardMaterial
   private base:THREE.MeshStandardMaterial
-  private shade?:MoonShade
+  private shade?:PlanetShade
   private fallback:TerrainSurfaceSampler
   private body:THREE.Mesh
   private onStatus:(status:TerrainStatus)=>void
   private surface?:SurfaceState
   private radiusMeters:number
   private bodyId:TerrainBody
-  constructor(body:THREE.Mesh,onStatus:(status:TerrainStatus)=>void,baseUrl:string,surface?:SurfaceState,hillshade?:HillshadeState,bodyId:TerrainBody='moon'){
-    this.body=body;this.onStatus=onStatus;this.surface=surface;this.bodyId=bodyId
+  private readonly profile:SolidSurfaceProfile
+  constructor(body:THREE.Mesh,onStatus:(status:TerrainStatus)=>void,baseUrl:string,surface?:SurfaceState,hillshade?:HillshadeState,bodyId:TerrainBody='moon',hillshadeTexture?:GlobalHillshadeLayer,profile:SolidSurfaceProfile=planetRenderProfiles[bodyId]){
+    this.body=body;this.onStatus=onStatus;this.surface=surface;this.bodyId=bodyId;this.profile=profile
     this.radiusMeters=bodyInfo[bodyId].radiusKm*1000
     this.base=body.material as THREE.MeshStandardMaterial
     this.material=this.base.clone()
+    const noDataColor=(profile.noDataColor??[.22,.22,.22]).join(',')
     this.material.onBeforeCompile=shader=>{
       shader.vertexShader='attribute float terrainCoverage; varying float vTerrainCoverage;\n'+shader.vertexShader
       shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvTerrainCoverage=terrainCoverage;')
       shader.fragmentShader='varying float vTerrainCoverage;\n'+shader.fragmentShader
-      shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>','#include <map_fragment>\ndiffuseColor.rgb=mix(vec3(0.22),diffuseColor.rgb,step(0.999,vTerrainCoverage));')
+      shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`#include <map_fragment>\ndiffuseColor.rgb=mix(vec3(${noDataColor}),diffuseColor.rgb,step(0.999,vTerrainCoverage));`)
     }
-    this.material.customProgramCacheKey=()=> 'cube-terrain-coverage-v1'
-    const detailProfile=bodyId==='mars'?MARS_DETAIL_PROFILE:MOON_DETAIL_PROFILE
-    if((bodyId==='moon'||bodyId==='mars')&&surface)this.shade=configureMoonSurfaceMaterial(this.material,surface,this.radiusMeters,true,undefined,undefined,detailProfile)
-    if(bodyId==='mars')configureCubeColorMaterial(this.material)
-    if(hillshade)configureTerrainHillshade(this.material,hillshade)
+    this.material.customProgramCacheKey=()=> `cube-terrain-coverage-v2/${noDataColor}`
+    const detailProfile=this.profile.detail
+    if(surface)this.shade=configurePlanetSurfaceMaterial(this.material,surface,this.radiusMeters,true,undefined,undefined,detailProfile)
+    if(this.profile.cubeColorSampling)configureCubeColorMaterial(this.material)
+    if(hillshade)configureTerrainHillshade(this.material,hillshade,hillshadeTexture)
     this.group.name=`${bodyId}-cube-terrain`;this.group.scale.setScalar((body.geometry as THREE.SphereGeometry).parameters.radius)
     body.add(this.group)
     this.fallback=sphereSurfaceSampler(body.geometry as THREE.SphereGeometry)
     this.source=new PlanetHeightSource(baseUrl,()=>this.report(),undefined,bodyId)
     this.setActive(false)
   }
+  private get referenceRadiusRatio(){return (this.source.manifest?.referenceRadiusMeters??this.radiusMeters)/this.radiusMeters}
   private setActive(active:boolean){this.active=active;this.group.visible=active;this.base.visible=!active}
   updateShadeCamera(camera:THREE.Camera){if(!this.shade)return;this.body.updateWorldMatrix(true,true);this.shade.camera.value.copy(this.body.worldToLocal(camera.position.clone())).divideScalar(this.group.scale.x)}
   setEnabled(enabled:boolean){this.enabled=enabled;this.lastPlan=-Infinity;if(!enabled){this.setActive(false);this.source.clear()}this.report()}
@@ -87,7 +92,7 @@ export class CubeTerrainLayer {
     const box=new THREE.Box3(),b=cubeUvBounds(address)
     for(let r=0;r<5;r++)for(let c=0;c<5;c++){
       const d=cubeDirection(address.face,b.left+(b.right-b.left)*c/4,b.top+(b.bottom-b.top)*r/4)
-      for(const h of [this.source.manifest!.minHeightMeters,this.source.manifest!.maxHeightMeters])box.expandByPoint(d.clone().multiplyScalar(1+h*4/this.radiusMeters))
+      for(const h of [this.source.manifest!.minHeightMeters,this.source.manifest!.maxHeightMeters])box.expandByPoint(d.clone().multiplyScalar(this.referenceRadiusRatio+h*4/this.radiusMeters))
     }
     box.expandByScalar(1e-7)
     const dataZ=Math.min(this.source.manifest!.maxZoom,Math.max(0,address.z+1-Math.log2((this.source.manifest!.sampleSize-1)/(SIZE-1))))
@@ -122,16 +127,16 @@ export class CubeTerrainLayer {
       index++
       const height=values[0],center=Number.isFinite(height)?height:0
       axis.set(Math.abs(d.y)<.9?0:1,Math.abs(d.y)<.9?1:0,0);a.crossVectors(d,axis).normalize();b.crossVectors(d,a).normalize()
-      const placed=(out:THREE.Vector3,t:THREE.Vector3,sign:number,h:number)=>out.copy(d).addScaledVector(t,sign*step).normalize().multiplyScalar(1+(Number.isFinite(h)?h:center)*this.exaggeration/this.radiusMeters)
+      const placed=(out:THREE.Vector3,t:THREE.Vector3,sign:number,h:number)=>out.copy(d).addScaledVector(t,sign*step).normalize().multiplyScalar(this.referenceRadiusRatio+(Number.isFinite(h)?h:center)*this.exaggeration/this.radiusMeters)
       placed(pa,a,1,values[1]);placed(ma,a,-1,values[2]);placed(pb,b,1,values[3]);placed(mb,b,-1,values[4])
       normal.crossVectors(pa.sub(ma),pb.sub(mb)).normalize()
-      return {height,normal}
+      return {height:height+(this.source.manifest!.referenceRadiusMeters-this.radiusMeters)/this.exaggeration,normal}
     },this.radiusMeters,this.exaggeration,true,node.directions)
     const material=this.material.clone();material.onBeforeCompile=this.material.onBeforeCompile;material.customProgramCacheKey=this.material.customProgramCacheKey
     const mesh=new THREE.Mesh(geometry,material);mesh.name=`${this.bodyId}-cube/${node.key}`;mesh.frustumCulled=false;mesh.visible=false;mesh.receiveShadow=true
-    if((this.bodyId==='moon'||this.bodyId==='mars')&&this.surface){
+    if(this.surface){
       const depth=new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking})
-      configureMoonTerrainDepth(depth,this.surface,this.radiusMeters,true,undefined,undefined,this.bodyId==='mars'?MARS_DETAIL_PROFILE:MOON_DETAIL_PROFILE);mesh.customDepthMaterial=depth
+      configurePlanetTerrainDepth(depth,this.surface,this.radiusMeters,true,undefined,undefined,this.profile.detail);mesh.customDepthMaterial=depth
     }
     node.mesh=mesh;node.edge=captureTerrainEdge(geometry,SIZE);this.group.add(mesh)
   }
@@ -153,8 +158,8 @@ export class CubeTerrainLayer {
         if(!frustum.intersectsBox(n.box)||local.dot(n.sphere.center)+local.length()*n.sphere.radius<.96)return 0
         const uv=cubeFaceUv(n.address.face,local),bounds=cubeUvBounds(n.address)
         const closest=uv?cubeDirection(n.address.face,THREE.MathUtils.clamp(uv.u,bounds.left,bounds.right),THREE.MathUtils.clamp(uv.v,bounds.top,bounds.bottom)):n.sphere.center.clone().normalize()
-        const height=THREE.MathUtils.clamp((local.length()-1)*this.radiusMeters/this.exaggeration,this.source.manifest!.minHeightMeters,this.source.manifest!.maxHeightMeters)
-        closest.multiplyScalar(1+height*this.exaggeration/this.radiusMeters)
+        const height=THREE.MathUtils.clamp((local.length()-this.referenceRadiusRatio)*this.radiusMeters/this.exaggeration,this.source.manifest!.minHeightMeters,this.source.manifest!.maxHeightMeters)
+        closest.multiplyScalar(this.referenceRadiusRatio+height*this.exaggeration/this.radiusMeters)
         const nearest=Math.max(100/this.radiusMeters,local.distanceTo(closest)/RESOLUTION_AHEAD)
         return focal*(Math.PI/2/2**n.address.z)/(SIZE-1)/nearest
       }
@@ -226,7 +231,7 @@ export class CubeTerrainLayer {
       const world=position.clone().sub(center).normalize(),ground=this.hitGround(new THREE.Ray(center.clone().addScaledVector(world,r*2),world.negate()))
       if(ground)return ground.distanceTo(center)
     }
-    return r*(1+(this.enabled?Math.max(0,this.source.manifest?.maxHeightMeters??0)*this.exaggeration/this.radiusMeters:0))
+    return this.enabled?r*(this.referenceRadiusRatio+Math.max(0,this.source.manifest?.maxHeightMeters??0)*this.exaggeration/this.radiusMeters):r
   }
   surfaceSignature(){return !this.active?'cube-fallback':`${this.exaggeration}/`+[...this.nodes.values()].filter(n=>n.mesh?.visible).map(n=>n.key).sort().join('|')}
   private geometryBytes(){return [...this.nodes.values()].reduce((sum,n)=>sum+(n.directions?.byteLength??0)+(n.coordinates?.byteLength??0)+(n.keys?.size??0)*64+

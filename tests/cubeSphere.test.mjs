@@ -74,10 +74,11 @@ test('cross-face mixed LOD stitching follows the coarser physical edge and its s
   patches.forEach(p=>p.geometry.dispose())
 })
 
+const contracts={moon:{radius:1737400,scale:.5,frame:'MEAN EARTH/POLAR AXIS OF DE421'},mars:{radius:3389500,scale:1,frame:'IAU2000'},venus:{radius:6051000,scale:1,frame:'Magellan body-fixed'},mercury:{radius:2439400,scale:.5,frame:'MESSENGER MDIS body-fixed'}}
 const fixture=(body='moon',maxZoom=1,sampleSize=65)=>{
   const tiles={};for(let z=0;z<=maxZoom;z++)for(let x=0;x<2**(z+1);x++)for(let y=0;y<2**z;y++)tiles[`${z}/${x}/${y}`]={min:100,max:200,error:500,bytes:2,sha256:'a'.repeat(64)}
   return {schema:body==='moon'?1:2,body,version:'cube-test',grid:'geographic-2x1',sampleSize,maxZoom,encoding:'gzip-int16-le',
-    scaleMeters:body==='moon'?.5:1,offsetMeters:0,referenceRadiusMeters:body==='moon'?1737400:3389500,frame:body==='moon'?'MEAN EARTH/POLAR AXIS OF DE421':'IAU2000',longitude:'east-positive-minus180-to180',rowOrder:'north-to-south',
+    scaleMeters:contracts[body].scale,offsetMeters:0,referenceRadiusMeters:contracts[body].radius,frame:contracts[body].frame,longitude:'east-positive-minus180-to180',rowOrder:'north-to-south',
     minHeightMeters:100,maxHeightMeters:200,credit:body==='moon'?'LOLA':'MOLA',sourceUrl:'https://example.test',tileUrl:'tiles/{z}/{x}/{y}.bin',tiles,
     noData:-32768,indexPages:{rootZoom:3,pages:{}},sourceResolutionMeters:500,verticalDatum:'reference sphere'}
 }
@@ -121,7 +122,7 @@ test('dense height cache makes room for geometry and metadata without losing wan
   assert.ok(source.metrics().cached<wanted.size)
 })
 
-for(const bodyId of ['moon','mars'])test(`${bodyId} cube terrain loads six complete roots, remains stationary, and releases on departure`,async t=>{
+for(const bodyId of ['moon','mars','mercury','venus'])test(`${bodyId} cube terrain loads six complete roots, remains stationary, and releases on departure`,async t=>{
   installFetch(t,bodyId)
   const body=new THREE.Mesh(cubeSphereGeometry(1),new THREE.MeshStandardMaterial()),statuses=[]
   const layer=new CubeTerrainLayer(body,s=>statuses.push(s),'https://example.test/',bodyId==='moon'?surfaceState():undefined,{value:1},bodyId)
@@ -133,7 +134,7 @@ for(const bodyId of ['moon','mars'])test(`${bodyId} cube terrain loads six compl
   assert.ok(layer.metrics().triangles<=400000);assert.ok(layer.metrics().memoryBytes<=256*1048576)
   const wanted=[...layer.wanted].sort(),signature=layer.surfaceSignature()
   for(let i=40;i<55;i++){layer.update(camera,600,i*150,true);await flush();assert.deepEqual([...layer.wanted].sort(),wanted);assert.equal(layer.surfaceSignature(),signature)}
-  const p=new THREE.Vector3(),n=new THREE.Vector3();assert.ok(layer.sampleSurface(0,0,p,n));close((p.length()-1)*(bodyId==='moon'?1737400:3389500),150,1)
+  const p=new THREE.Vector3(),n=new THREE.Vector3();assert.ok(layer.sampleSurface(0,0,p,n));close(p.length()*(bodyId==='mercury'?2439700:bodyId==='venus'?6051800:contracts[bodyId].radius)-contracts[bodyId].radius,150,1)
   assert.equal(statuses.at(-1).body,bodyId)
   assert.equal(layer.group.name,`${bodyId}-cube-terrain`)
   const node=[...layer.nodes.values()].find(n=>n.mesh)
@@ -141,7 +142,13 @@ for(const bodyId of ['moon','mars'])test(`${bodyId} cube terrain loads six compl
   node.mesh.material.onBeforeCompile(shader,{})
   assert.ok(shader.uniforms.terrainHillshadeEnabled)
   assert.equal(!!shader.uniforms.moonDetail,bodyId==='moon')
-  layer.update(camera,600,10000,false);await flush()
+  if(bodyId==='mercury'||bodyId==='venus'){
+    layer.setExaggeration(4)
+    for(let i=0;i<40;i++){layer.update(camera,600,10000+i*150,true);await flush()}
+    assert.ok(layer.sampleSurface(0,0,p,n))
+    close(p.length()*(bodyId==='venus'?6051800:2439700)-contracts[bodyId].radius,600,1,'Datum offset must not be exaggerated')
+  }
+  layer.update(camera,600,20000,false);await flush()
   assert.equal(layer.active,false);assert.equal(layer.metrics().memoryBytes,0);assert.equal(body.material.visible,true)
 })
 

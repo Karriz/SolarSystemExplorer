@@ -63,7 +63,7 @@ test('mars detail profile scales triplanar sampling by the Martian radius and it
   assert.match(shader.fragmentShader, /moonSurfaceSample\(moonDetailMap, moonDirection \* \(26480\.46875\)/)
   assert.match(shader.fragmentShader, /moonSurfaceSample\(moonMediumMap, moonDirection \* \(6620\.1171875\)/)
   assert.doesNotMatch(shader.fragmentShader, /27146\.875|6786\.71875/)
-  assert.match(material.customProgramCacheKey(), new RegExp(`${previousKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/moon-normal-texture-v7/3389500/128/512/clip`))
+  assert.match(material.customProgramCacheKey(), new RegExp(`${previousKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/planet-packed-detail-v8/3389500/128/512/0.3/clip`))
   assert.equal(shader.uniforms.moonDetail, state.detail)
 })
 
@@ -111,7 +111,7 @@ test('moon color sharpen is active only while texels are mildly magnified', () =
   assert.equal(moonColorSharpenWeight(40), 0)
 })
 
-for(const file of ['moon-detail.png','moon-medium-detail.png','mars-detail.png','mars-medium-detail.png'])test(`${file} contains valid unit normals and roughness data at fixed size`, () => {
+for(const file of ['moon-detail.png','moon-medium-detail.png','mars-detail.png','mars-medium-detail.png','mercury-detail.png','mercury-medium-detail.png','venus-detail.png','venus-medium-detail.png'])test(`${file} contains valid packed normals, reflectance and roughness data at fixed size`, () => {
   const png=readFileSync(new URL(`../public/textures/${file}`,import.meta.url))
   assert.equal(png.readUInt32BE(16),512);assert.equal(png.readUInt32BE(20),512)
   assert.equal(png[24],8);assert.equal(png[25],6)
@@ -119,16 +119,18 @@ for(const file of ['moon-detail.png','moon-medium-detail.png','mars-detail.png',
   for(let offset=8;offset<png.length;){const size=png.readUInt32BE(offset);if(png.toString('ascii',offset+4,offset+8)==='IDAT')parts.push(png.subarray(offset+8,offset+8+size));offset+=size+12}
   const raw=inflateSync(Buffer.concat(parts)),stride=512*4+1
   assert.equal(raw.length,stride*512)
-  let variation=0
+  let variation=0, minAlbedo=255, maxAlbedo=0
   for(let y=0;y<512;y++){
     assert.equal(raw[y*stride],0)
     for(let x=0;x<512;x++){
-      const i=y*stride+1+x*4,n=[raw[i],raw[i+1],raw[i+2]].map(v=>v/255*2-1)
+      const i=y*stride+1+x*4,xy=[raw[i],raw[i+1]].map(v=>v/255*2-1), n=[...xy,Math.sqrt(Math.max(.01,1-xy[0]**2-xy[1]**2))]
+      minAlbedo=Math.min(minAlbedo,raw[i+2]);maxAlbedo=Math.max(maxAlbedo,raw[i+2])
       assert.ok(Math.abs(Math.hypot(...n)-1)<.015)
       assert.ok(n[2]>.75, 'angular rock faces remain outward-facing and bounded')
       assert.ok(raw[i+3]>=226&&raw[i+3]<=253)
       if(Math.abs(n[0])>.02||Math.abs(n[1])>.02)variation++
     }
   }
+  assert.ok(maxAlbedo-minAlbedo>60,'reflectance variation survives direct overhead lighting')
   assert.ok(variation>10000,'normal texture contains actual relief variation')
 })
