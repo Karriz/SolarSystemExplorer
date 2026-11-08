@@ -32,10 +32,16 @@ def main():
                        height=2048, count=3, dtype='uint8', quality=92) as dataset:
         dataset.write(rgb)
     ocean = json.loads(args.ocean.read_text())
-    classes = rasterize([(feature['geometry'], 9) for feature in ocean['features']],
-                        out_shape=(1024, 2048), transform=from_bounds(-180, -90, 180, 90, 2048, 1024),
-                        fill=0, dtype='uint8')
-    raw = classes.tobytes()
+    # Subpixel geographic water coverage, not class IDs. Filter/mip this as an
+    # area fraction so global coastlines and small islands survive minification.
+    width, height, aa = 4096, 2048, 4
+    fine = rasterize([(feature['geometry'], 1) for feature in ocean['features']],
+                     out_shape=(height * aa, width * aa),
+                     transform=from_bounds(-180, -90, 180, 90, width * aa, height * aa),
+                     fill=0, dtype='uint8')
+    counts = fine.reshape(height, aa, width, aa).sum(axis=(1, 3), dtype=np.uint16)
+    coverage = np.rint(counts * (255.0 / (aa * aa))).astype('uint8')
+    raw = coverage.tobytes()
     (OUT / 'earth-surface-base.bin.gz').write_bytes(gzip.compress(raw, mtime=0))
     metadata = {
         'schema': 1, 'body': 'earth', 'width': 4096, 'height': 2048,
@@ -43,11 +49,11 @@ def main():
         'sourceUrl': 'https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-map/',
         'sourceSha256': hashlib.sha256(source.read_bytes()).hexdigest(),
         'colorSha256': hashlib.sha256((OUT / 'earth-color.webp').read_bytes()).hexdigest(),
-        'globalMask': {'width': 2048, 'height': 1024, 'source': 'Natural Earth 1:10m ocean',
+        'globalMask': {'width': 4096, 'height': 2048, 'encoding': 'uint8-water-coverage', 'supersampling': 4, 'source': 'Natural Earth 1:10m ocean',
                        'sourceUrl': 'https://www.naturalearthdata.com/downloads/10m-physical-vectors/10m-ocean/',
                        'inputSha256': hashlib.sha256(args.ocean.read_bytes()).hexdigest(),
                        'sha256': hashlib.sha256(raw).hexdigest(),
-                       'classes': {'0': 'unclassified land', '9': 'mapped ocean'},
+                       'coverage': {'0': 'land', '255': 'ocean', 'intermediate': 'fractional ocean coverage'},
                        'note': 'Generalized overview, not ground-level shorelines. Inland water comes from local vector tiles.'},
         'detail': 'Generated packed normal/roughness detail; mapped local classes from OpenFreeMap. No generated displacement.',
         'note': 'Appearance composite, not calibrated albedo. Global WorldCover overview is not installed.'

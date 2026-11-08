@@ -4,6 +4,21 @@ export const REGIONAL_TRIANGLE_BUDGET = 400_000
 export const EARTH_HEIGHT_SIZE = 129
 export function earthMeshSize(zoom: number) { return zoom >= 14 ? 129 : zoom >= 11 ? 65 : 33 }
 export function meshTriangles(size: number) { return 2 * (size - 1) ** 2 + 8 * (size - 1) }
+export function inheritHeightGrid(heights: Float32Array, size: number,
+  parent: { west: number; east: number; north: number; south: number },
+  child: { west: number; east: number; north: number; south: number }) {
+  const result = new Float32Array(size ** 2)
+  for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) {
+    const lon = child.west + (child.east - child.west) * c / (size - 1)
+    const lat = child.north + (child.south - child.north) * r / (size - 1)
+    const x = Math.max(0, Math.min(size - 1, (lon - parent.west) / (parent.east - parent.west) * (size - 1)))
+    const y = Math.max(0, Math.min(size - 1, (parent.north - lat) / (parent.north - parent.south) * (size - 1)))
+    const col = Math.min(size - 2, Math.floor(x)), row = Math.min(size - 2, Math.floor(y)), u = x - col, v = y - row
+    result[r * size + c] = (heights[row * size + col] * (1 - u) + heights[row * size + col + 1] * u) * (1 - v)
+      + (heights[(row + 1) * size + col] * (1 - u) + heights[(row + 1) * size + col + 1] * u) * v
+  }
+  return result
+}
 export function heightGrid(heights: Float32Array, sourceSize: number, size: number) {
   if (sourceSize === size) return heights
   if (heights.length !== sourceSize ** 2 || (sourceSize - 1) % (size - 1)) throw new Error('Incompatible height grid')

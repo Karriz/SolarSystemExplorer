@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { chromium } from 'playwright'
 
 const url = process.env.VECTOR_PREVIEW_URL || 'http://127.0.0.1:5175'
-const output = '.terrain-cache/earth-rendering'
+const output = process.env.EARTH_OUTPUT || '.terrain-cache/earth-rendering'
 await mkdir(output, { recursive: true })
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] })
 const report = { cases: [], errors: [], forbiddenRequests: [], completed: false }
@@ -41,14 +41,18 @@ async function visit(page, name, lat, lon, altitude, mapped = true) {
     const m = terrainPilot.metrics(), layer = __earthScene.regional.get('earth'), owner = __earthScene.earthSurface
     const visible = [...layer.nodes.values()].filter(n => n.mesh?.visible)
     return m.regional.earth.maxLevel >= 14 && !m.regional.earth.requests && !m.surfaces.earth.vectors.requests
-      && visible.every(n => owner.vectors.entry(n.address)?.address.z === Math.min(n.address.z, 14))
+      && visible.every(n => owner.vectors.entry(n.address)?.address.z === n.address.z)
   }, null, { timeout: 90000 })
+  if (mapped) await page.waitForFunction(() => {
+    const v = terrainPilot.metrics().surfaces.earth.vectors
+    return v.ready && !v.requests && !v.missingWanted
+  }, null, { timeout: 120000 })
   // Allow loaded fine masks to replace retained parent masks before inspection.
   await page.waitForTimeout(mapped ? 8000 : 1500)
   const metrics = await page.evaluate(() => terrainPilot.metrics())
   assert.equal(metrics.surfaces.earth.water, 'mapped overview')
   assert.ok(metrics.regional.earth.memoryBytes <= 48 * 1048576)
-  assert.ok(metrics.surfaces.earth.vectors.memoryBytes <= 32 * 1048576)
+  assert.ok(metrics.surfaces.earth.vectors.memoryBytes <= metrics.surfaces.earth.vectors.budget)
   assert.ok(metrics.regional.earth.triangles <= 400000)
   let detailComparison
   if (name === 'forest-ground') {
@@ -73,10 +77,14 @@ async function visit(page, name, lat, lon, altitude, mapped = true) {
     const nodes = [...owner.terrain.nodes.values()].filter(n => n.mesh?.visible)
     return { colorSize: [owner.color.texture?.image.width, owner.color.texture?.image.height],
       maskLevels: nodes.map(n => owner.vectors.entry(n.address)?.address.z),
+      sourceLevels: nodes.map(n => owner.vectors.entry(n.address)?.sourceZoom),
+      maskSizes: nodes.map(n => owner.vectors.entry(n.address)?.size),
       owner: owner.constructor.name, baseShader: scene.bodies.get('earth').material.customProgramCacheKey(),
       maskCount: nodes.filter(n => n.surface?.active.value).length }
   })
+  if (name === 'iberia-shore') await page.getByRole('button', { name: 'Close information panel', exact: true }).click()
   await page.screenshot({ path: `${output}/${name}.png` })
+  if (name === 'iberia-shore') await page.getByRole('button', { name: 'Show details', exact: true }).click()
   report.cases.push({ name, lat, lon, altitude, detail, detailComparison, metrics })
   await writeFile(`${output}/results.json`, JSON.stringify(report, null, 2))
   assert.equal(report.errors.length, 0, report.errors.join('\n'))
@@ -87,6 +95,7 @@ try {
   assert.equal(await page.evaluate(() => __earthScene.earthSurface.started), false)
   const cases = process.env.EARTH_CASES?.split(',')
   for (const [name, lat, lon, altitude, mapped] of [
+    ['iberia-shore', 37.0235, -8.9955, 300, true],
     ['finland-coast', 60.15, 24.98, 12000, true],
     ['forest-ground', 60.38, 24.6, 300, true],
     ['elevated-lake', 46.68, 7.74, 3000, true],

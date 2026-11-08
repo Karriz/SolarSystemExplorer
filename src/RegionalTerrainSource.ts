@@ -25,6 +25,9 @@ export function earthPilotSources(): RegionalSource[] {
     credit: 'Mapterhorn · source resolution varies', url: 'https://mapterhorn.com/attribution/', bounds: mercatorBounds,
     async load(address, signal) {
       const response = await fetch(`https://tiles.mapterhorn.com/${tileKey(address)}.webp`, { signal, credentials: 'omit', mode: 'cors' })
+      // Coverage gaps (including all-ocean tiles) must not block an entire
+      // coastal sibling set. The renderer can inherit the loaded parent DEM.
+      if (response.status === 404) return { missing: true as const, transferBytes: 0, decodeMs: 0 }
       if (!response.ok) throw new Error(`Elevation HTTP ${response.status}`)
       const buffer = await response.arrayBuffer(), transferBytes = buffer.byteLength
       if (signal.aborted || failed) throw new Error('Elevation request cancelled or decoder unavailable')

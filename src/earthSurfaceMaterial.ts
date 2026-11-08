@@ -1,14 +1,14 @@
 import * as THREE from 'three'
 import { configurePlanetSurfaceMaterial, type SurfaceDetailProfile } from './planetSurfaceMaterial.ts'
 import type { SurfaceState } from './surfaceMaterial.ts'
-import { MASK_WIDTH, MASK_GUTTER } from './earthSurfaceData.ts'
+import { MASK_WIDTH, MASK_GUTTER, SHORE_DISTANCE } from './earthSurfaceData.ts'
 import type { TileAddress } from './surfaceTiles.ts'
 
 export const EARTH_DETAIL_PROFILE: SurfaceDetailProfile = { radiusMeters: 6371000, detailRepeatMeters: 64, mediumRepeatMeters: 256, albedoStrength: .12, localDetailCoordinates: true }
 export type EarthMaterialState = {
   global: { value: THREE.Texture }; globalReady: { value: number }; time: { value: number }
 }
-export function earthMaskBinding() { return { map: { value: null as THREE.Texture | null }, active: { value: 0 }, width: { value: MASK_WIDTH }, transform: { value: new THREE.Vector4() } } }
+export function earthMaskBinding() { return { map: { value: null as THREE.Texture | null }, surface: { value: null as THREE.Texture | null }, active: { value: 0 }, width: { value: MASK_WIDTH }, transform: { value: new THREE.Vector4() } } }
 export type EarthMaskBinding = ReturnType<typeof earthMaskBinding>
 
 /** Used by the material and the independent WebGL projection regression. */
@@ -34,36 +34,20 @@ export function configureEarthSurfaceMaterial(material: THREE.Material, state: S
   material.onBeforeCompile = (shader, renderer) => {
     previous.call(material, shader, renderer)
     if (!shader.fragmentShader.includes('#include <lights_physical_fragment>')) return
+    // Some WebGL atan implementations return zero on the negative X axis.
+    // Resolve that narrow angular case explicitly before wrapping gradients;
+    // otherwise the longitude jumps to Greenwich for one pixel at the seam.
+    shader.fragmentShader = shader.fragmentShader.replace('atan(-p.z,p.x)',
+      '(p.x<0.0 && abs(p.z)<abs(p.x)*1.0e-7 ? (p.z>=0.0 ? -3.14159265359 : 3.14159265359) : atan(-p.z,p.x))')
     Object.assign(shader.uniforms, { earthGlobal: earth.global, earthGlobalReady: earth.globalReady, earthTime: earth.time })
-    if (binding) Object.assign(shader.uniforms, { earthMask: binding.map, earthMaskActive: binding.active, earthMaskTransform: binding.transform, earthMaskWidth: binding.width })
+    if (binding) Object.assign(shader.uniforms, { earthMask: binding.map, earthSurface: binding.surface, earthMaskActive: binding.active, earthMaskTransform: binding.transform, earthMaskWidth: binding.width })
     if (binding) configureEarthMaskProjection(shader, binding)
     shader.vertexShader = `varying float vEarthDistance;\n${shader.vertexShader}`
     shader.vertexShader = shader.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
       vEarthDistance = distance(position + moonOrigin, moonCamera) * moonMetersPerUnit;`)
     shader.fragmentShader = `uniform sampler2D earthGlobal; uniform float earthGlobalReady; uniform float earthTime;
       varying float vEarthDistance;
-      ${binding ? 'uniform sampler2D earthMask; uniform float earthMaskActive; uniform float earthMaskWidth; varying vec2 vEarthMaskUv;' : ''}
-      vec4 earthMaterial(float id, vec3 base) {
-        if(id<0.5) return vec4(base,0.0);
-        if(id<1.5) return vec4(0.035,0.075,0.025,0.0);
-        if(id<2.5) return vec4(0.11,0.16,0.045,0.0);
-        if(id<3.5) return vec4(0.19,0.20,0.075,0.0);
-        if(id<4.5) return vec4(0.50,0.39,0.22,0.0);
-        if(id<5.5) return vec4(0.21,0.20,0.18,0.0);
-        if(id<6.5) return vec4(0.75,0.80,0.82,0.0);
-        if(id<7.5) return vec4(0.20,0.19,0.17,0.0);
-        if(id<8.5) return vec4(0.06,0.12,0.07,0.0);
-        return vec4(0.008,0.045,0.075,1.0);
-      }
-      ${binding ? `vec4 earthLocal(vec3 base) {
-        vec2 pixel=vEarthMaskUv*earthMaskWidth-0.5, f=fract(pixel), uv=(floor(pixel)+0.5)/earthMaskWidth;
-        vec2 d=vec2(1.0/earthMaskWidth,0.0);
-        vec4 a=earthMaterial(texture2D(earthMask,uv).r*255.0,base);
-        vec4 b=earthMaterial(texture2D(earthMask,uv+d.xy).r*255.0,base);
-        vec4 c=earthMaterial(texture2D(earthMask,uv+d.yx).r*255.0,base);
-        vec4 e=earthMaterial(texture2D(earthMask,uv+d.xx).r*255.0,base);
-        return mix(mix(a,b,f.x),mix(c,e,f.x),f.y);
-      }` : ''}
+      ${binding ? 'uniform sampler2D earthMask; uniform sampler2D earthSurface; uniform float earthMaskActive; uniform float earthMaskWidth; varying vec2 vEarthMaskUv;' : ''}
       ${shader.fragmentShader}`
     shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nvec3 earthMeasuredNormal=normal; float earthGeneratedTint=0.0;')
     // Material palettes are applied after the shared detail chunk. Preserve
@@ -71,27 +55,45 @@ export function configureEarthSurfaceMaterial(material: THREE.Material, state: S
     shader.fragmentShader = shader.fragmentShader.replace('diffuseColor.rgb *= 1.0 + moonTint;', 'diffuseColor.rgb *= 1.0 + moonTint; earthGeneratedTint=moonTint;')
     shader.fragmentShader = shader.fragmentShader.replace('#include <lights_physical_fragment>', `
       vec2 earthLl=surfaceLonLat();
-      float earthId=earthGlobalReady>0.5 ? texture2D(earthGlobal,vec2(earthLl.x/360.0+0.5,0.5-earthLl.y/180.0)).r*255.0 : 0.0;
-      vec4 earthSample=earthMaterial(earthId,diffuseColor.rgb);
-      ${binding ? 'if(earthMaskActive>0.5) { earthSample=earthLocal(diffuseColor.rgb); earthId=texture2D(earthMask,vEarthMaskUv).r*255.0; }' : ''}
+      vec2 earthGlobalUv=vec2(earthLl.x/360.0+0.5,0.5-earthLl.y/180.0);
+      vec2 earthGlobalDx=dFdx(earthGlobalUv), earthGlobalDy=dFdy(earthGlobalUv);
+      earthGlobalDx.x-=round(earthGlobalDx.x); earthGlobalDy.x-=round(earthGlobalDy.x);
+      float globalWater=earthGlobalReady>0.5 ? textureGrad(earthGlobal,earthGlobalUv,earthGlobalDx,earthGlobalDy).r : 0.0;
+      vec3 waterColor=vec3(0.008,0.045,0.075);
+      vec4 earthSample=vec4(mix(diffuseColor.rgb,waterColor,globalWater),globalWater);
+      float earthMapped=0.0;
+      float earthRelief=mix(0.5,0.0,globalWater);
+      float earthRoughness=mix(roughnessFactor,0.24,globalWater);
+      ${binding ? `if(earthMaskActive>0.5) {
+        vec4 palette=texture2D(earthMask,vEarthMaskUv);
+        vec4 response=texture2D(earthSurface,vEarthMaskUv);
+        float distanceTexels=(response.g*2.0-1.0)*${SHORE_DISTANCE}.0;
+        float footprint=max(length(dFdx(vEarthMaskUv)*earthMaskWidth),length(dFdy(vEarthMaskUv)*earthMaskWidth));
+        float edgeWidth=max(0.001,max(fwidth(distanceTexels),footprint*0.5));
+        float crispWater=smoothstep(-edgeWidth*0.5,edgeWidth*0.5,distanceTexels);
+        // Averaged signed distances are invalid when minified. Fractional area
+        // coverage and its mip chain preserve distant islands without shimmer.
+        float wet=mix(crispWater,response.r,smoothstep(0.7,1.5,footprint));
+        vec3 land=diffuseColor.rgb;
+        if(response.r<0.995) land=max(vec3(0.0),palette.rgb-waterColor*response.r+diffuseColor.rgb*(1.0-palette.a))/max(0.005,1.0-response.r);
+        earthSample=vec4(mix(land,waterColor,wet),wet);
+        earthMapped=palette.a;
+        earthRelief=response.b;
+        earthRoughness=response.a;
+      }` : ''}
       // Retain the fixed composite's bright polar sea-ice appearance. This is
       // an appearance heuristic, not a dated observed sea-ice classification.
       float earthIce=smoothstep(0.35,0.65,max(diffuseColor.r,max(diffuseColor.g,diffuseColor.b)))*smoothstep(55.0,75.0,abs(earthLl.y));
       earthSample=mix(earthSample,vec4(diffuseColor.rgb,0.0),earthIce);
       float earthClose=1.0-smoothstep(20000.0,180000.0,vEarthDistance);
       float earthWater=earthSample.a;
-      float earthRelief=0.5;
-      if(earthId>0.5 && earthId<3.5) earthRelief=0.14;
-      if(earthId>3.5 && earthId<4.5) earthRelief=0.18;
-      if(earthId>4.5 && earthId<5.5) earthRelief=1.0;
-      if(earthId>5.5 && earthId<8.5) earthRelief=0.12;
       normal=normalize(mix(earthMeasuredNormal,normal,earthRelief));
       // Keep broad geographic color variation rather than painting flat biome swatches.
       float earthBrightness=clamp(dot(diffuseColor.rgb,vec3(0.2126,0.7152,0.0722))*2.0+0.7,0.75,1.25);
       diffuseColor.rgb=mix(diffuseColor.rgb,earthSample.rgb*earthBrightness,earthClose*0.82);
       diffuseColor.rgb=mix(diffuseColor.rgb,earthSample.rgb,earthWater*0.94);
-      if(earthId>0.5 && earthId<8.5) diffuseColor.rgb*=1.0+earthGeneratedTint*earthClose*0.82;
-      roughnessFactor=mix(roughnessFactor,0.24,earthWater);
+      diffuseColor.rgb*=1.0+earthGeneratedTint*earthClose*0.82*earthMapped*(1.0-earthWater);
+      roughnessFactor=mix(roughnessFactor,earthRoughness,max(earthMapped,earthWater));
       // Water has a radial surface normal even when unresolved DEM noise remains.
       vec3 earthDir=normalize(vMoonDir);
       vec3 wave=vec3(sin(earthDir.z*210000.0+earthTime*0.55),sin(earthDir.x*190000.0-earthTime*0.4),sin(earthDir.y*220000.0+earthTime*0.35));
@@ -101,6 +103,6 @@ export function configureEarthSurfaceMaterial(material: THREE.Material, state: S
       normal=normalize(mix(normal,waterNormal,earthWater));
       #include <lights_physical_fragment>`)
   }
-  material.customProgramCacheKey = () => `${previousKey}/earth-mapped-v1/${binding ? 'patch' : 'global'}`
+  material.customProgramCacheKey = () => `${previousKey}/earth-coverage-v2/${binding ? 'patch' : 'global'}`
   return shade
 }

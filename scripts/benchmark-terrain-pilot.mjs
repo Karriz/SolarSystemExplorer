@@ -71,7 +71,7 @@ try {
       const terrain = terrainMetrics(metrics, body)
       assert.ok(terrain.memoryBytes <= 48*1024*1024)
       assert.ok(terrain.triangles <= terrain.triangleBudget)
-      if (body === 'earth') assert.ok(terrain.surface.vectors.memoryBytes <= 32*1024*1024)
+      if (body === 'earth') assert.ok(terrain.surface.vectors.memoryBytes <= terrain.surface.vectors.budget)
       assert.equal(terrain.failed,0)
       assert.ok(Math.abs(metrics.altitudeMeters-altitude)<2, `Altitude ${metrics.altitudeMeters}`)
       const on = await frames(page)

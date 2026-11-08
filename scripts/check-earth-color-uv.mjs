@@ -13,7 +13,7 @@ try {
   const page=await browser.newPage()
   for(const [lon,lat] of [[24.6,60.38],[8.02,46.57],[14.58,-21.12],[179.99,85],[-179.99,-85]]) for(const z of [8,14,15]) {
     const a=mercatorAddress(lon,lat,z),local=earthColorUvs(mercatorBounds(a),9,a)
-    for(const parentLevels of [0,2])for(const maskWidth of [260,516]){
+    for(const parentLevels of [0,2])for(const maskWidth of [136,264,520,1032]){
       const p={z:z-parentLevels,x:Math.floor(a.x/2**parentLevels),y:Math.floor(a.y/2**parentLevels)},texture=new THREE.Texture(),material=new THREE.MeshStandardMaterial()
       texture.repeat.set(2**p.z,2**p.z);texture.offset.set(-p.x,-(2**p.z-p.y-1))
       const transform=earthMaskTransform(a,p,undefined,maskWidth)

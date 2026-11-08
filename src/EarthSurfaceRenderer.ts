@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { RegionalTerrainLayer } from './RegionalTerrainLayer.ts'
 import { earthPilotSources } from './RegionalTerrainSource.ts'
 import { PlanetColorTexture, disposeColorTexture } from './PlanetColorTexture.ts'
-import { EarthVectorSource } from './EarthVectorSource.ts'
+import { EarthVectorSource, type EarthMaskRequest } from './EarthVectorSource.ts'
 import { configureEarthSurfaceMaterial, EARTH_DETAIL_PROFILE, earthMaskBinding, earthMaskTransform, type EarthMaskBinding } from './earthSurfaceMaterial.ts'
 import { EARTH_CLASS, MASK_GUTTER, MASK_WIDTH } from './earthSurfaceData.ts'
 import { loadSurfaceDetail } from './surfaceAssets.ts'
@@ -36,6 +36,7 @@ export class EarthSurfaceRenderer {
   private lakeHeights = new Map<string, number>()
   private lakeAttempts = new Map<string, number>()
   private waterRevision = 0
+  private maskPlan: EarthMaskRequest[] = []
   private globalError = false
   private readonly body: THREE.Mesh
   readonly state: SurfaceState
@@ -69,16 +70,20 @@ export class EarthSurfaceRenderer {
   private async loadGlobal() {
     const timeout = setTimeout(() => this.controller.abort(), 15000)
     try {
-      const response = await fetch(`${import.meta.env.BASE_URL}textures/earth-surface-base.bin.gz`, { signal: this.controller.signal })
+      const response = await fetch(`${import.meta.env.BASE_URL}textures/earth-surface-base.bin.gz?v=coverage-4k-v2`, { signal: this.controller.signal })
       if (!response.ok || !response.body) throw Error('Global water mask unavailable')
       let data = new Uint8Array(await response.arrayBuffer())
       // Vite and some static hosts set Content-Encoding:gzip; browsers then
       // deliver the decompressed body. Other hosts serve the gzip file as-is.
       if (data[0] === 0x1f && data[1] === 0x8b) data = new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer())
-      if (data.length !== 2048 * 1024) throw Error('Invalid global water mask')
+      if (data.length !== 4096 * 2048 && data.length !== 2048 * 1024) throw Error('Invalid global water mask')
       if (this.disposed) return
-      const texture = new THREE.DataTexture(data, 2048, 1024, THREE.RedFormat)
-      texture.wrapS = THREE.RepeatWrapping; texture.minFilter = texture.magFilter = THREE.NearestFilter
+      // Decode class IDs into coverage before enabling interpolation/mips.
+      const width = data.length === 4096 * 2048 ? 4096 : 2048
+      if (width === 2048) data = data.map(value => value === 9 ? 255 : 0)
+      const texture = new THREE.DataTexture(data, width, width / 2, THREE.RedFormat)
+      texture.wrapS = THREE.RepeatWrapping; texture.minFilter = THREE.LinearMipmapLinearFilter; texture.magFilter = THREE.LinearFilter
+      texture.generateMipmaps = true; texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
       texture.unpackAlignment = 1; texture.needsUpdate = true
       this.materialState.global.value = texture; this.materialState.globalReady.value = 1
     } catch { if (!this.disposed) this.globalError = true }
@@ -93,7 +98,7 @@ export class EarthSurfaceRenderer {
     this.materialState.time.value = (now / 1000) % 3600
     this.body.updateWorldMatrix(true, false)
     this.shade.camera.value.copy(this.body.worldToLocal(camera.position.clone()))
-    if (!selected) { this.lakeHeights.clear(); this.lakeAttempts.clear() }
+    if (!selected) { this.lakeHeights.clear(); this.lakeAttempts.clear(); this.maskPlan = [] }
   }
   configurePatch(material: THREE.Material, origin: THREE.Vector3, camera: { value: THREE.Vector3 }, binding: EarthMaskBinding) {
     return configureEarthSurfaceMaterial(material, this.state, this.materialState, 6371000, false, origin, camera, binding)
@@ -103,14 +108,16 @@ export class EarthSurfaceRenderer {
     const entry = this.vectors.entry(address)
     binding.active.value = entry ? 1 : 0
     binding.map.value = entry?.texture ?? this.placeholder
+    binding.surface.value = entry?.surfaceTexture ?? this.placeholder
     if (entry) {
       binding.width.value = entry.mask!.width
       earthMaskTransform(address, entry.address, binding.transform.value, entry.mask!.width)
     }
   }
-  prepare(addresses: TileAddress[], now: number, focus: { lon: number; lat: number }) {
-    this.vectors.update(addresses, now, focus)
-    for (const address of addresses) {
+  prepare(addresses: { address: TileAddress; pixels: number }[], now: number, focus: { lon: number; lat: number }) {
+    const requests = this.maskPlan = planEarthMasks(addresses, this.maskPlan)
+    this.vectors.update(requests, now, focus)
+    for (const { address } of addresses) {
       const mask = this.vectors.entry(address)?.mask
       for (const water of mask?.waters ?? []) {
         if (this.lakeHeights.has(water.key) || this.lakeHeights.size >= 512 || now - (this.lakeAttempts.get(water.key) ?? -Infinity) < 2000) continue
@@ -129,7 +136,7 @@ export class EarthSurfaceRenderer {
     const entry = this.vectors.entry(address)
     // A generalized parent may omit small islands. It can supply temporary
     // appearance, but must not flatten finer measured land to sea level.
-    if (!entry?.mask || entry.address.z < Math.min(address.z, 14)) return heights
+    if (!entry?.mask || (entry.sourceZoom ?? entry.address.z) < Math.min(address.z, 14)) return heights
     const result = heights.slice(), n = 2 ** entry.address.z, mask = entry.mask, width = mask.width ?? MASK_WIDTH, sizePixels = width - MASK_GUTTER * 2
     for (let r = 0; r < size; r++) {
       const lat = bounds.north + (bounds.south - bounds.north) * r / (size - 1)
@@ -154,10 +161,10 @@ export class EarthSurfaceRenderer {
       return image ? (Number(image.width) || 0) * (Number(image.height) || 0) : 0
     }
     const colorPixels = pixels(this.color.texture), detailPixels = pixels(this.state.detailMap.value) + pixels(this.state.mediumDetailMap.value)
-    const waterPixels = this.materialState.globalReady.value ? 2048 * 1024 : 0
+    const waterPixels = this.materialState.globalReady.value ? pixels(this.materialState.global.value) : 0
     const assets = { colorGpuBytes: Math.ceil(colorPixels * 4 * 4 / 3), colorDecodedBytes: colorPixels * 4,
       detailGpuBytes: Math.ceil(detailPixels * 4 * 4 / 3), detailDecodedBytes: detailPixels * 4,
-      waterGpuBytes: waterPixels, waterDecodedBytes: waterPixels }
+      waterGpuBytes: Math.ceil(waterPixels * 4 / 3), waterDecodedBytes: waterPixels }
     return { color: this.colorMode, water: this.materialState.globalReady.value > 0 ? 'mapped overview' : this.globalError ? 'unavailable' : 'loading',
     vectors: this.vectors.metrics(), lakeLevels: this.lakeHeights.size,
     assets, estimatedGlobalBytes: Object.values(assets).reduce((sum, bytes) => sum + bytes, 0),
@@ -176,4 +183,28 @@ export class EarthSurfaceRenderer {
       layer.map.value?.dispose(); layer.map.value = null; layer.ready.value = 0
     }
   }
+}
+
+/** Spend render texels on projected surface area. Native PBF detail and mask
+ * density are independent of the terrain vertex grid, including overzoom. */
+export function planEarthMasks(patches: { address: TileAddress; pixels: number }[], previous: EarthMaskRequest[] = []): EarthMaskRequest[] {
+  const retained = new Map(previous.map(r => [`${r.address.z}/${r.address.x}/${r.address.y}`, r]))
+  let texels = 0
+  const ordered = [...patches].sort((a, b) => b.pixels - a.pixels)
+  return ordered.map(({ address, pixels }, index) => {
+    let size = pixels > 900 ? 1024 : pixels > 300 ? 512 : pixels > 100 ? 256 : 128
+    const old = retained.get(`${address.z}/${address.x}/${address.y}`)
+    if (old) {
+      size = old.size
+      // Separate promotion and demotion thresholds prevent camera jitter from
+      // rebuilding the same tile at alternating resolutions.
+      while (size < 1024 && pixels > (size === 128 ? 100 : size === 256 ? 300 : 900) * 1.2) size *= 2
+      while (size > 128 && pixels < (size === 256 ? 100 : size === 512 ? 300 : 900) * .8) size /= 2
+    }
+    const remaining = (ordered.length - index - 1) * 128 ** 2
+    while (size > 128 && texels + size ** 2 + remaining > 2 * 1024 ** 2) size /= 2
+    texels += size ** 2
+    const finerSource = old ? pixels > (old.sourceZoom > address.z ? 144 : 216) : pixels > 180
+    return { address, size, sourceZoom: Math.min(14, address.z + (finerSource ? 1 : 0)), priority: pixels }
+  })
 }

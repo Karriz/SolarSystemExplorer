@@ -74,11 +74,12 @@ export function sampleTerrarium(rgba: Uint8ClampedArray, width: number, height: 
 }
 
 export type TerrainPatch = { sampleSize?: number; heights: Float32Array; gradients?: Float32Array; transferBytes: number; decodeMs: number }
+export type MissingTerrainPatch = { missing: true; transferBytes: number; decodeMs: number }
 export type RegionalSource = {
   id: string; body: PilotBody; sampleSize?: number; root: TileAddress; roots?: (lon: number, lat: number) => TileAddress[]; maxZoom: number; minHeight: number; maxHeight: number
   resolution: number; credit: string; url: string; bounds: (address: TileAddress) => TileBounds
   info?: (address: TileAddress) => TerrainTileInfo | undefined
-  load: (address: TileAddress, signal: AbortSignal) => Promise<TerrainPatch>
+  load: (address: TileAddress, signal: AbortSignal) => Promise<TerrainPatch | MissingTerrainPatch>
   dispose?: () => void
 }
 

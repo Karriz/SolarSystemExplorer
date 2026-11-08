@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as THREE from 'three'
 import { earthViewRoots, geoDirection, mercatorAddress, mercatorBounds, parseRegionalManifest, sampleTerrarium, terrainBounds, tileKey } from '../src/terrainPilot.ts'
-import { earthMeshSize, heightGrid, REGIONAL_TRIANGLE_BUDGET } from '../src/terrainLod.ts'
+import { earthMeshSize, heightGrid, inheritHeightGrid, REGIONAL_TRIANGLE_BUDGET } from '../src/terrainLod.ts'
 import { terrainGeometry } from '../src/terrain.ts'
 import { decodeTerrain } from '../src/terrainDecode.ts'
 import { gzipSync } from 'node:zlib'
@@ -317,6 +317,35 @@ test('negative measured land elevations are retained rather than flattened as oc
   assert.ok(point)
   assert.ok(point.length()<1)
   close((point.length()-1)*6371000,-75,2)
+})
+
+test('missing coastal elevation children inherit parent heights without blocking available siblings', async t => {
+  const { layer, camera } = setup(t, async a => a.z === 7 && a.x % 2 === 0
+    ? { missing: true, transferBytes: 0, decodeMs: 0 }
+    : { heights: new Float32Array(65 * 65).fill(-75), transferBytes: 100, decodeMs: 0 }, 'earth')
+  for (let i = 0; i < 8; i++) { layer.update(camera, 900, performance.now() + i * 200, true); await flush() }
+  const visible = [...layer.nodes.values()].filter(n => n.mesh?.visible)
+  assert.equal(visible.length, 4)
+  assert.ok(visible.every(n => n.address.z === 7), 'missing children must not strand the whole parent at coarse resolution')
+  assert.equal(layer.metrics().inherited, 2)
+  assert.equal(layer.metrics().failed, 0)
+  for (const node of visible.filter(n => n.inherited)) assert.ok(node.heights.every(h => h === -75), 'missing data must not be guessed as sea level')
+  assert.ok(layer.metrics().memoryBytes <= layer.budget)
+  assert.ok(layer.hitGround(new THREE.Ray(camera.position.clone(), camera.position.clone().negate().normalize())))
+})
+
+test('inherited heights respect geographic rows within native Mercator parent/child bounds', () => {
+  const a = mercatorAddress(-8.9, 37.1, 8), parent = mercatorBounds(a), size = 129
+  const height = (lat, lon) => lon * 2 - lat * 3 - 200
+  const heights = Float32Array.from({ length: size ** 2 }, (_, i) => height(
+    parent.north + (parent.south - parent.north) * Math.floor(i / size) / (size - 1),
+    parent.west + (parent.east - parent.west) * (i % size) / (size - 1)))
+  for (const dx of [0, 1]) for (const dy of [0, 1]) {
+    const child = mercatorBounds({ z: 9, x: a.x * 2 + dx, y: a.y * 2 + dy })
+    const inherited = inheritHeightGrid(heights, size, parent, child)
+    for (let r = 0; r < size; r += 8) for (let c = 0; c < size; c += 8) close(inherited[r * size + c],
+      height(child.north + (child.south - child.north) * r / (size - 1), child.west + (child.east - child.west) * c / (size - 1)), 0.0001)
+  }
 })
 
 test('camera clearance uses the displayed parent while a finer sibling set is incomplete',async t=>{

@@ -51,7 +51,7 @@ try {
       const m = metrics.regional.earth, image = m.surface.vectors
       const total = Object.values(metrics.regional).reduce((sum, r) => sum + r.memoryBytes + (r.surface?.vectors.memoryBytes ?? 0), 0)
       peakTrackedBytes = Math.max(peakTrackedBytes, total)
-      assert.ok(m.memoryBytes <= 48*1024*1024); assert.ok(image.memoryBytes <= 32*1024*1024)
+      assert.ok(m.memoryBytes <= 48*1024*1024); assert.ok(image.memoryBytes <= image.budget)
       assert.ok(m.triangles <= m.triangleBudget)
       const signature = JSON.stringify([m.cached, m.visible, image.cached])
       stable = m.requests === 0 && image.requests === 0 && signature === previous ? stable + 1 : 0

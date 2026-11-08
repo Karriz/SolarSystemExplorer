@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { firstTerrainSurfaceHit, type TerrainSurfaceSampler } from './terrainSurface.ts'
 import { captureTerrainEdge, stitchTerrainEdges, type TerrainEdge } from './terrainEdges.ts'
-import { earthMeshSize, heightGrid, meshTriangles, terrainSurfaceBounds, REGIONAL_TRIANGLE_BUDGET } from './terrainLod.ts'
+import { earthMeshSize, heightGrid, inheritHeightGrid, meshTriangles, terrainSurfaceBounds, REGIONAL_TRIANGLE_BUDGET } from './terrainLod.ts'
 import { earthColorUvs } from './earthProjection.ts'
 import type { EarthSurfaceRenderer } from './EarthSurfaceRenderer.ts'
 import type { EarthMaskBinding } from './earthSurfaceMaterial.ts'
@@ -14,9 +14,9 @@ import { geoDirection, tileKey, type RegionalSource, type TerrainPatch } from '.
 import type { TileAddress } from './surfaceTiles.ts'
 
 type Node = { address: TileAddress; source: RegionalSource; sphere: THREE.Sphere; box?: THREE.Box3; origin: THREE.Vector3; mesh?: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
-  heights?: Float32Array; gradients?: Float32Array; edge?: TerrainEdge; surface?: EarthMaskBinding; surfaceVersion?: string; request?: AbortController; meshBytes?: number; bytes: number; used: number; retry: number }
+  heights?: Float32Array; inherited?: boolean; gradients?: Float32Array; edge?: TerrainEdge; surface?: EarthMaskBinding; surfaceVersion?: string; request?: AbortController; meshBytes?: number; bytes: number; used: number; retry: number }
 export type RegionalMetrics = { ready: boolean; visible: number; cached: number; memoryBytes: number; transferBytes: number;
-  requests: number; failed: number; decodeMs: number; buildMs: number; triangles: number; sources: string[]; grids: Record<string, number>; maxLevel: number; triangleBudget: number; residentMeshes: number; surface?: ReturnType<EarthSurfaceRenderer['metrics']> }
+  requests: number; failed: number; inherited: number; decodeMs: number; buildMs: number; triangles: number; sources: string[]; grids: Record<string, number>; maxLevel: number; triangleBudget: number; residentMeshes: number; surface?: ReturnType<EarthSurfaceRenderer['metrics']> }
 
 /** Small native-grid overlays. Parent patches stay visible until all replacing
  * children exist. The normal body/planetary terrain remains the outer fallback. */
@@ -243,7 +243,13 @@ export class RegionalTerrainLayer {
     }
     roots.forEach(show)
     const visible = [...this.nodes.values()].filter(n => n.mesh?.visible && n.edge)
-    this.earthSurface?.prepare(visible.map(n => n.address), now, { lon: viewLon, lat: viewLat })
+    this.earthSurface?.prepare(visible.map(n => {
+      // Crack-hiding skirts extend 1.5 km below even tiny surface patches.
+      // Their bounds must not consume the independent material texel budget.
+      const surface = n.box!.getBoundingSphere(new THREE.Sphere())
+      return { address: n.address, pixels: Math.min(viewportHeight * 3,
+        focal * 2 * surface.radius / Math.max(surface.radius * .5, local.distanceTo(surface.center))) }
+    }), now, { lon: viewLon, lat: viewLat })
     for (const node of visible) {
       if (node.surface && this.earthSurface) {
         this.earthSurface.bind(node.address, node.surface)
@@ -330,9 +336,16 @@ export class RegionalTerrainLayer {
   private async load(node: Node, request: AbortController) {
     const timeout = setTimeout(() => { node.retry = performance.now() + 30000; request.abort() }, 15000)
     try {
-      const patch: TerrainPatch = await node.source.load(node.address, request.signal)
-      this.transferBytes += patch.transferBytes; this.decodeMs += patch.decodeMs
+      const loaded = await node.source.load(node.address, request.signal)
+      this.transferBytes += loaded.transferBytes; this.decodeMs += loaded.decodeMs
       if (this.disposed || request.signal.aborted || !this.wanted.has(this.key(node.source, node.address))) return
+      let patch: TerrainPatch
+      if ('missing' in loaded) {
+        const a = node.address, parent = this.nodes.get(this.key(node.source, { z: a.z - 1, x: Math.floor(a.x / 2), y: Math.floor(a.y / 2) }))
+        if (!parent?.heights) throw Error('Elevation unavailable without a loaded parent')
+        patch = { heights: inheritHeightGrid(parent.heights, node.source.sampleSize ?? 65, node.source.bounds(parent.address), node.source.bounds(a)), transferBytes: 0, decodeMs: 0 }
+        node.inherited = true
+      } else { patch = loaded; node.inherited = false }
       if (patch.heights.length !== (node.source.sampleSize ?? 65) ** 2 || !patch.heights.every(Number.isFinite)
         || patch.heights.some(h => Number.isFinite(h) && (h < node.source.minHeight - 1 || h > node.source.maxHeight + 1))) throw new Error('Invalid measured heights')
       if (patch.gradients && (patch.gradients.length !== 2 * 65 * 65 || !patch.gradients.every(Number.isFinite))) throw new Error('Invalid terrain gradients')
@@ -404,7 +417,7 @@ export class RegionalTerrainLayer {
   sampleMeasuredHeight(lat: number, lon: number): number {
     let node: Node | undefined
     for (const candidate of this.nodes.values()) {
-      if (!candidate.heights || candidate.address.z < 10 || (node && candidate.address.z <= node.address.z)) continue
+      if (!candidate.heights || candidate.inherited || candidate.address.z < 10 || (node && candidate.address.z <= node.address.z)) continue
       const b = candidate.source.bounds(candidate.address)
       if (lon >= b.west && lon <= b.east && lat >= b.south && lat <= b.north) node = candidate
     }
@@ -418,7 +431,7 @@ export class RegionalTerrainLayer {
   metrics(): RegionalMetrics {
     const visible = [...this.nodes.values()].filter(n => n.mesh?.visible && this.group.visible)
     return { ready: visible.length > 0, visible: visible.length, cached: [...this.nodes.values()].filter(n => n.mesh).length,
-      memoryBytes: this.bytes, transferBytes: this.transferBytes, requests: this.requests, failed: [...this.nodes.values()].filter(n => n.retry > 0).length,
+      memoryBytes: this.bytes, transferBytes: this.transferBytes, requests: this.requests, failed: [...this.nodes.values()].filter(n => n.retry > 0).length, inherited: visible.filter(n => n.inherited).length,
       decodeMs: this.decodeMs, buildMs: this.buildMs, triangles: visible.reduce((s, n) => s + n.mesh!.geometry.index!.count / 3, 0),
       sources: this.sources.map(s => s.id), grids: Object.fromEntries([33, 65, 129].map(size => [size, visible.filter(n => this.gridSize(n) === size).length])),
       maxLevel: visible.reduce((z, n) => Math.max(z, n.address.z), 0), triangleBudget: REGIONAL_TRIANGLE_BUDGET, residentMeshes: [...this.nodes.values()].filter(n => n.edge).length, surface: this.earthSurface?.metrics() }

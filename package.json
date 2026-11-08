@@ -72,6 +72,8 @@
     "venus:check-views": "node scripts/check-venus-views.mjs",
     "earth:build-surface": "sh scripts/terrain-python.sh scripts/build-earth-surface.py",
     "earth:build-detail": "node scripts/build-earth-detail.mjs",
+    "earth:check-zoom": "node scripts/check-earth-zoom-stability.mjs",
+    "earth:check-shorelines": "node --experimental-strip-types scripts/check-earth-shoreline-filter.mjs",
     "earth:check-surfaces": "node scripts/check-earth-surfaces.mjs"
   },
   "dependencies": {
