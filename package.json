@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "camera:check": "node scripts/check-camera-controls.mjs",
     "moon:build-color": "sh scripts/terrain-python.sh scripts/build-moon-color.py",
     "moon:check-color": "node scripts/check-moon-color.mjs",
     "hillshade:build": "sh scripts/terrain-python.sh scripts/build-global-hillshade.py",

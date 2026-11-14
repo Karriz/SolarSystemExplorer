@@ -13,15 +13,16 @@ class Canvas extends EventTarget {
   hasPointerCapture(id) { return this.pointers.has(id) }
   releasePointerCapture(id) { this.pointers.delete(id) }
 }
-function setup(radius = 1, distance = 5, hitGround) {
+function setup(radius = 1, distance = 5, hitGround, groundRadius) {
   const camera = new THREE.PerspectiveCamera(48, 4 / 3, radius * .001, 200)
   camera.position.set(0, .4, 1.1).normalize().multiplyScalar(radius * distance)
   camera.lookAt(0, 0, 0)
   const element = new Canvas(), target = new THREE.Vector3()
   let starts = 0
-  const controls = createCameraOrbit(camera, element, target, radius + SURFACE_CLEARANCE, () => starts++, hitGround)
+  const controls = createCameraOrbit(camera, element, target, radius + SURFACE_CLEARANCE, () => starts++, hitGround, groundRadius)
   const body = { id: 'earth', center: new THREE.Vector3(), rotation: new THREE.Quaternion(), radius }
   controls.setBody(body)
+  element.controls = controls
   return { camera, element, target, controls, body, starts: () => starts }
 }
 function pointer(element, type, button, x, y, id = 1, pointerType = 'mouse') {
@@ -29,10 +30,11 @@ function pointer(element, type, button, x, y, id = 1, pointerType = 'mouse') {
   Object.assign(event, { pointerType, pointerId: id, button, clientX: x, clientY: y })
   element.dispatchEvent(event)
 }
-function wheel(element, deltaY, x = 750, y = 20) {
+function wheel(element, deltaY, x = 750, y = 20, settle = true) {
   const event = new Event('wheel', { cancelable: true })
   Object.assign(event, { deltaY, deltaMode: 0, clientX: x, clientY: y })
   element.dispatchEvent(event)
+  if (settle) for (let i = 0; i < 120; i++) element.controls.update(1 / 60)
 }
 const close = (a, b, tolerance = 1e-9) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`)
 function drag(element, button, from, to) {
@@ -371,4 +373,185 @@ test('zoom can descend to 100 meters above terrain below the reference radius', 
   wheel(element, 300, 400, 300)
   assert.ok(camera.position.length() > controls.minDistance)
   controls.dispose()
+})
+
+test('wheel zoom is gradual, monotonic, and independent of render frame rate', () => {
+  const states = [30, 60, 144].map(fps => {
+    const state = setup(1, 1.1)
+    const before = state.camera.position.length()
+    wheel(state.element, -300, 400, 300, false)
+    close(state.camera.position.length(), before)
+    let previous = before
+    for (let i = 0; i < fps / 2; i++) {
+      state.controls.update(1 / fps)
+      const distance = state.camera.position.length()
+      assert.ok(distance <= previous + 1e-12)
+      assert.ok(distance > 1 + .1 * Math.exp(-300 * .00064) - 1e-12)
+      previous = distance
+    }
+    return state
+  })
+  close(states[0].camera.position.length(), states[1].camera.position.length(), 1e-10)
+  close(states[1].camera.position.length(), states[2].camera.position.length(), 1e-10)
+  states.forEach(s => s.controls.dispose())
+})
+
+test('animated cursor zoom keeps its ground anchor on every intermediate frame', () => {
+  const { controls, camera, element } = setup(1, 1.15)
+  drag(element, 2, [400, 300], [470, 150])
+  const point = new THREE.Vector2(510, 340), anchor = controls.hit(point)
+  wheel(element, -600, point.x, point.y, false)
+  for (let i = 0; i < 120; i++) {
+    controls.update(1 / 60)
+    const projection = anchor.clone().project(camera)
+    close(projection.x, .275, 1e-7)
+    close(projection.y, -2 / 15, 1e-7)
+  }
+  controls.dispose()
+})
+
+test('input interruption, disabling, and changing body cancel pending wheel motion', () => {
+  for (const interrupt of [s => pointer(s.element, 'pointerdown', 0, 400, 300),
+    s => { s.controls.enabled = false }, s => s.controls.setBody({ ...s.body, id: 'moon' })]) {
+    const s = setup(1, 1.1)
+    wheel(s.element, -500, 400, 300, false)
+    s.controls.update(1 / 60)
+    interrupt(s)
+    const position = s.camera.position.clone()
+    for (let i = 0; i < 30; i++) s.controls.update(1 / 60)
+    close(position.distanceTo(s.camera.position), 0)
+    s.controls.dispose()
+  }
+})
+
+test('wheel direction changes retarget zoom immediately without stored overshoot at the floor', () => {
+  const s = setup(1, 1.05)
+  for (let i = 0; i < 30; i++) wheel(s.element, -3000, 400, 300, false)
+  for (let i = 0; i < 120; i++) s.controls.update(1 / 60)
+  close(s.camera.position.length(), 1 + SURFACE_CLEARANCE)
+  wheel(s.element, 300, 400, 300, false)
+  s.controls.update(1 / 60)
+  assert.ok(s.camera.position.length() > 1 + SURFACE_CLEARANCE)
+  s.controls.dispose()
+})
+
+// An ellipsoid supplies a continuous, analytically known terrain height and
+// ray intersection, independent of mesh loading or the navigation algorithm.
+function terrainSetup() {
+  const scale = new THREE.Vector3(1.08, 1, 1), sphere = new THREE.Sphere(new THREE.Vector3(), 1)
+  const hitGround = ray => {
+    const transformed = new THREE.Ray(ray.origin.clone().divide(scale), ray.direction.clone().divide(scale).normalize())
+    return transformed.intersectSphere(sphere, new THREE.Vector3())?.multiply(scale) ?? null
+  }
+  const groundRadius = position => 1 / position.clone().normalize().divide(scale).length()
+  return { ...setup(1, 1.01, hitGround, groundRadius), groundRadius }
+}
+
+test('left ground dragging maintains terrain height and the grabbed point across changing elevation', () => {
+  const s = terrainSetup(), anchor = s.controls.hit(new THREE.Vector2(400, 300))
+  const height = s.camera.position.length() - s.groundRadius(s.camera.position)
+  pointer(s.element, 'pointerdown', 0, 400, 300)
+  for (const x of [420, 440, 460, 480, 500]) {
+    pointer(s.element, 'pointermove', 0, x, 310)
+    close(s.camera.position.length() - s.groundRadius(s.camera.position), height, 1e-9)
+    const p = anchor.clone().project(s.camera)
+    close(p.x, (x - 400) / 400, 1e-6)
+    close(p.y, -1 / 30, 1e-6)
+  }
+  s.controls.dispose()
+})
+
+test('right ground pivot stays centered at constant terrain height through tilt and compass rotation', () => {
+  const s = terrainSetup(), anchor = s.controls.hit(new THREE.Vector2(400, 300))
+  const height = s.camera.position.length() - s.groundRadius(s.camera.position)
+  pointer(s.element, 'pointerdown', 2, 400, 300)
+  for (const [x, y] of [[400, 200], [400, 100], [500, 100], [600, 120], [700, 140]]) {
+    pointer(s.element, 'pointermove', 2, x, y)
+    const p = anchor.clone().project(s.camera)
+    close(p.x, 0, 1e-7)
+    close(p.y, 0, 1e-7)
+    close(s.camera.position.length() - s.groundRadius(s.camera.position), height, 1e-9)
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(s.camera.quaternion)
+    close(right.dot(anchor.clone().normalize()), 0, 1e-7)
+  }
+  s.controls.dispose()
+})
+
+test('smooth wheel zoom during a held right drag retains the original ground pivot', () => {
+  const s = terrainSetup(), anchor = s.controls.hit(new THREE.Vector2(400, 300))
+  pointer(s.element, 'pointerdown', 2, 400, 300)
+  pointer(s.element, 'pointermove', 2, 500, 150)
+  wheel(s.element, -300, 500, 150, false)
+  for (let i = 0; i < 90; i++) {
+    s.controls.update(1 / 60)
+    const p = anchor.clone().project(s.camera)
+    close(p.x, 0, 1e-7)
+    close(p.y, 0, 1e-7)
+  }
+  pointer(s.element, 'pointermove', 2, 520, 170)
+  close(anchor.clone().project(s.camera).x, 0, 1e-7)
+  close(anchor.clone().project(s.camera).y, 0, 1e-7)
+  s.controls.dispose()
+})
+
+test('ground pivots and compass headings stay finite at both poles', () => {
+  for (const sign of [-1, 1]) {
+    const s = setup(1, 1.01)
+    s.camera.position.set(0, sign * 1.01, 0)
+    s.camera.up.set(0, 0, -sign)
+    s.camera.lookAt(s.target)
+    const anchor = s.controls.hit(new THREE.Vector2(400, 300))
+    drag(s.element, 2, [400, 300], [500, 160])
+    const p = anchor.clone().project(s.camera)
+    close(p.x, 0, 1e-7)
+    close(p.y, 0, 1e-7)
+    close(s.camera.position.length(), 1.01)
+    assert.ok(s.camera.quaternion.toArray().every(Number.isFinite))
+    s.controls.dispose()
+  }
+})
+
+test('reversing the wheel cancels unfinished travel in the old direction', () => {
+  const s = setup(1, 1.1)
+  wheel(s.element, -1000, 400, 300, false)
+  s.controls.update(1 / 60)
+  const distance = s.camera.position.length()
+  wheel(s.element, 100, 400, 300, false)
+  s.controls.update(1 / 60)
+  assert.ok(s.camera.position.length() > distance)
+  s.controls.dispose()
+})
+
+test('animated retreat from a tilted ground view restores orbit without orientation jumps', () => {
+  const s = setup(1, 1.1)
+  drag(s.element, 2, [400, 300], [550, 100])
+  let previous = s.camera.quaternion.clone()
+  for (let step = 0; step < 5; step++) {
+    wheel(s.element, 3000, 400, 300, false)
+    for (let frame = 0; frame < 120; frame++) {
+      s.controls.update(1 / 60)
+      assert.ok(previous.angleTo(s.camera.quaternion) < .12, 'Transition must distribute rotation over frames')
+      previous.copy(s.camera.quaternion)
+    }
+  }
+  close(s.camera.getWorldDirection(new THREE.Vector3()).dot(s.camera.position.clone().negate().normalize()), 1, 1e-7)
+  assert.equal(s.controls.close, false)
+  s.controls.dispose()
+})
+
+test('animated cursor zoom reconciles its anchor with changing terrain elevation', () => {
+  const s = terrainSetup()
+  drag(s.element, 2, [400, 300], [470, 180])
+  const point = new THREE.Vector2(500, 340), anchor = s.controls.hit(point)
+  assert.ok(anchor)
+  const initialHeight = s.camera.position.length() - s.groundRadius(s.camera.position)
+  wheel(s.element, -300, point.x, point.y, false)
+  for (let i = 0; i < 120; i++) {
+    s.controls.update(1 / 60)
+    const p = anchor.clone().project(s.camera)
+    close(p.x, .25, 1e-6)
+    close(p.y, -2 / 15, 1e-6)
+  }
+  close(s.camera.position.length() - s.groundRadius(s.camera.position), initialHeight * Math.exp(-300 * .00064), 1e-8)
+  s.controls.dispose()
 })

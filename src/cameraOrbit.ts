@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { SURFACE_CLEARANCE } from './cameraSafety.ts'
 
 export type CameraBody = { id: string; center: THREE.Vector3; rotation: THREE.Quaternion; radius: number }
+const ZOOM_RESPONSE_SECONDS = .14
 
 /** Body-centered orbital navigation blending into ground-anchored controls. */
 export class BodyCameraControls {
@@ -22,14 +23,19 @@ export class BodyCameraControls {
   private gesture: { point: THREE.Vector2; distance: number } | null = null
   private previousTouchAction: string
   private previousCursor: string
+  private zoomTarget: number | null = null
+  private zoomPoint: THREE.Vector2 | undefined
+  private zoomDirection = 0
+  private groundRadius?: (position: THREE.Vector3) => number | undefined
 
-  constructor(camera: THREE.PerspectiveCamera, element: HTMLElement, target: THREE.Vector3, minDistance: number, onStart: () => void, hitGround?: (ray: THREE.Ray) => THREE.Vector3 | null) {
+  constructor(camera: THREE.PerspectiveCamera, element: HTMLElement, target: THREE.Vector3, minDistance: number, onStart: () => void, hitGround?: (ray: THREE.Ray) => THREE.Vector3 | null, groundRadius?: (position: THREE.Vector3) => number | undefined) {
     this.camera = camera
     this.element = element
     this.target = target
     this.minDistance = minDistance
     this.onStart = onStart
     this.hitGround = hitGround
+    this.groundRadius = groundRadius
     this.body = { id: '', center: target.clone(), rotation: new THREE.Quaternion(), radius: Math.max(Number.EPSILON, minDistance - SURFACE_CLEARANCE) }
     this.previousTouchAction = element.style.touchAction
     this.previousCursor = element.style.cursor
@@ -56,7 +62,7 @@ export class BodyCameraControls {
     }
     this.body = { ...body, center: body.center.clone(), rotation: body.rotation.clone() }
     this.refreshNavigation()
-    if (!sameBody) this.cancelDrag()
+    if (!sameBody) { this.cancelDrag(); this.zoomTarget = null }
     if (wasClose !== this.close && this.drag?.button === 0) this.drag.grab = this.hit(this.drag.point)
     if (!this.drag) this.element.style.cursor = this.close ? 'grab' : this.previousCursor
   }
@@ -68,13 +74,47 @@ export class BodyCameraControls {
     else if (this.close && altitude >= .8) this.close = false
   }
 
-  update() {
+  update(deltaSeconds = 1 / 60) {
+    if (!this.enabled) this.zoomTarget = null
+    if (this.zoomTarget !== null) {
+      const ground = this.surfaceRadius(this.camera.position)
+      const height = Math.max(SURFACE_CLEARANCE, this.camera.position.distanceTo(this.target) - ground)
+      this.zoomTarget = THREE.MathUtils.clamp(this.zoomTarget, SURFACE_CLEARANCE, Math.max(SURFACE_CLEARANCE, this.maxDistance - ground))
+      const remaining = Math.log(this.zoomTarget / height)
+      const next = Math.abs(remaining) < 1e-5 ? this.zoomTarget
+        : height * Math.exp(remaining * -Math.expm1(-Math.max(0, deltaSeconds) / ZOOM_RESPONSE_SECONDS))
+      this.zoom(next / height, this.zoomPoint)
+      if (Math.abs(remaining) < 1e-5) this.zoomTarget = null
+    }
     const offset = this.camera.position.clone().sub(this.target)
     const distance = offset.length()
     if (distance === 0) offset.set(0, 0, 1)
-    this.camera.position.copy(this.target).add(offset.setLength(THREE.MathUtils.clamp(distance, this.minDistance, this.maxDistance)))
+    const minimum = this.groundRadius ? this.surfaceRadius(this.camera.position) + SURFACE_CLEARANCE : this.minDistance
+    this.camera.position.copy(this.target).add(offset.setLength(THREE.MathUtils.clamp(distance, minimum, this.maxDistance)))
     this.refreshClose(this.body.radius)
     this.refreshNavigation()
+    this.camera.updateMatrixWorld()
+  }
+
+  private surfaceRadius(position: THREE.Vector3) {
+    return this.groundRadius?.(position) ?? this.minDistance - SURFACE_CLEARANCE
+  }
+
+  private height() {
+    return Math.max(SURFACE_CLEARANCE, this.camera.position.distanceTo(this.target) - this.surfaceRadius(this.camera.position))
+  }
+
+  // Sample terrain at the new footprint. For a right drag, move along the
+  // existing sightline so the pivot remains fixed at screen center.
+  private keepHeight(height: number, pivot?: THREE.Vector3) {
+    if (!this.groundRadius || this.surfaceWeight === 0) return
+    const direction = pivot && this.camera.position.clone().sub(pivot).normalize()
+    for (let i = 0; i < 6; i++) {
+      const distance = this.surfaceRadius(this.camera.position) + height
+      if (Math.abs(this.camera.position.distanceTo(this.target) - distance) < SURFACE_CLEARANCE * 1e-5) break
+      if (pivot && direction) this.camera.position.copy(pivot).addScaledVector(direction, this.groundRange(pivot, direction, distance))
+      else this.camera.position.sub(this.target).setLength(distance).add(this.target)
+    }
     this.camera.updateMatrixWorld()
   }
 
@@ -130,12 +170,14 @@ export class BodyCameraControls {
   }
 
   private look(dx: number, dy: number, anchor: THREE.Vector3) {
+    const height = this.height()
     const vertical = anchor.clone().sub(this.target).normalize()
     const offset = this.camera.position.clone().sub(anchor)
     const angle = Math.acos(THREE.MathUtils.clamp(offset.clone().normalize().dot(vertical), -1, 1))
     const next = THREE.MathUtils.clamp(angle - dy * .004 * this.surfaceWeight, 0, 85 * Math.PI / 180)
     const yaw = new THREE.Quaternion().setFromAxisAngle(vertical, -dx * .004 * this.surfaceWeight)
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion).applyQuaternion(yaw)
+    const right = angle > 1e-6 ? vertical.clone().cross(offset).normalize().applyQuaternion(yaw)
+      : new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion).applyQuaternion(yaw)
     const pitch = new THREE.Quaternion().setFromAxisAngle(right, next - angle)
     const distance = this.camera.position.distanceTo(this.target)
     this.transform(pitch.multiply(yaw), anchor, anchor)
@@ -143,6 +185,12 @@ export class BodyCameraControls {
     // sightline prevents a low camera from dipping through the safety floor.
     const direction = this.camera.position.clone().sub(anchor).normalize()
     this.camera.position.copy(anchor).addScaledVector(direction, this.groundRange(anchor, direction, distance))
+    this.keepHeight(height, anchor)
+    if (next > 1e-6) {
+      this.camera.up.copy(vertical)
+      this.camera.lookAt(anchor)
+      this.camera.up.set(0, 1, 0).applyQuaternion(this.camera.quaternion)
+    }
     this.camera.updateMatrixWorld()
   }
 
@@ -155,15 +203,17 @@ export class BodyCameraControls {
   }
 
   private zoom(factor: number, point?: THREE.Vector2) {
+    const fixedPivot = this.drag?.button === 2 && this.surfaceWeight === 1 ? this.drag.grab?.clone() : null
+    if (fixedPivot) point = this.viewCenter()
     const offset = this.camera.position.clone().sub(this.target)
     const radius = this.body.radius
     const oldDistance = offset.length()
-    const surfaceRadius = this.minDistance - SURFACE_CLEARANCE
-    const distance = THREE.MathUtils.clamp(surfaceRadius + (oldDistance - surfaceRadius) * factor, this.minDistance, this.maxDistance)
+    const surfaceRadius = this.surfaceRadius(this.camera.position)
+    const distance = THREE.MathUtils.clamp(surfaceRadius + (oldDistance - surfaceRadius) * factor, surfaceRadius + SURFACE_CLEARANCE, this.maxDistance)
     // Blend in as the globe grows to fill the vertical field of view.
     const angularRadius = Math.asin(Math.min(1, radius / oldDistance))
-    const weight = this.attachAllowed ? THREE.MathUtils.smootherstep(angularRadius / THREE.MathUtils.degToRad(this.camera.fov / 2), .75, 1) : 0
-    const anchor = point && weight > 0 ? this.hit(point) : null
+    const weight = fixedPivot ? 1 : this.attachAllowed ? THREE.MathUtils.smootherstep(angularRadius / THREE.MathUtils.degToRad(this.camera.fov / 2), .75, 1) : 0
+    const anchor = fixedPivot ?? (point && weight > 0 ? this.hit(point) : null)
     const radialPosition = this.target.clone().add(offset.setLength(distance))
     if (anchor) {
       const direction = this.camera.position.clone().sub(anchor).normalize()
@@ -181,10 +231,28 @@ export class BodyCameraControls {
       const correction = new THREE.Quaternion().setFromUnitVectors(after.sub(this.target).normalize(), anchor.clone().sub(this.target).normalize())
       this.transform(new THREE.Quaternion().slerp(correction, weight))
     }
-    if (this.drag) this.drag.grab = this.hit(this.drag.button === 0 ? this.drag.point : this.viewCenter())
+    const height = Math.max(SURFACE_CLEARANCE, distance - surfaceRadius)
+    this.keepHeight(height, fixedPivot ?? undefined)
+    if (anchor && point && weight === 1 && !fixedPivot && this.groundRadius) {
+      this.reconcileGrab(height, anchor, point)
+    }
+    if (this.drag) this.drag.grab = fixedPivot ?? this.hit(this.drag.button === 0 ? this.drag.point : this.viewCenter())
+  }
+
+  private reconcileGrab(height: number, anchor: THREE.Vector3, point: THREE.Vector2) {
+    for (let i = 0; i < 6; i++) {
+      const hit = this.hit(point)
+      if (!hit) break
+      const correction = new THREE.Quaternion().setFromUnitVectors(hit.sub(this.target).normalize(), anchor.clone().sub(this.target).normalize())
+      this.transform(correction)
+      this.keepHeight(height)
+      if (correction.angleTo(new THREE.Quaternion()) < 1e-9) break
+    }
   }
 
   private leftDrag(from: THREE.Vector2, to: THREE.Vector2, grab: THREE.Vector3 | null) {
+    const height = this.height()
+    const groundAnchor = grab?.clone()
     const rotation = this.orbitRotation(to.x - from.x, to.y - from.y)
     if (this.surfaceWeight > 0) {
       const hit = this.hit(to)
@@ -198,6 +266,10 @@ export class BodyCameraControls {
     }
     const saved = this.drag?.grab?.clone()
     this.transform(rotation)
+    this.keepHeight(height)
+    // Terrain-height changes alter the projected grab. Reconcile the ground
+    // anchor and clearance together, rather than allowing a later safety push.
+    if (groundAnchor && this.surfaceWeight === 1 && this.groundRadius) this.reconcileGrab(height, groundAnchor, to)
     if (saved) this.drag!.grab!.copy(saved)
     if (this.drag && this.surfaceWeight < 1) this.drag.grab = this.hit(to)
   }
@@ -221,6 +293,7 @@ export class BodyCameraControls {
     if (this.drag && event.pointerType !== 'touch') return
     if (this.pointers.size >= 2) return
     this.onStart()
+    this.zoomTarget = null
     const point = new THREE.Vector2(event.clientX, event.clientY)
     this.pointers.set(event.pointerId, point)
     this.element.setPointerCapture(event.pointerId)
@@ -262,7 +335,17 @@ export class BodyCameraControls {
     event.preventDefault()
     this.onStart()
     const pixels = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.element.clientHeight : 1)
-    this.zoom(Math.exp(THREE.MathUtils.clamp(pixels * .00064, -.7, .7)), new THREE.Vector2(event.clientX, event.clientY))
+    if (pixels === 0) return
+    const direction = Math.sign(pixels)
+    if (this.zoomTarget !== null && direction !== this.zoomDirection) this.zoomTarget = null
+    this.zoomDirection = direction
+    const factor = Math.exp(THREE.MathUtils.clamp(pixels * .00064, -.7, .7))
+    this.zoomTarget = THREE.MathUtils.clamp((this.zoomTarget ?? this.height()) * factor,
+      SURFACE_CLEARANCE, Math.max(SURFACE_CLEARANCE, this.maxDistance - this.surfaceRadius(this.camera.position)))
+    const point = new THREE.Vector2(event.clientX, event.clientY)
+    // A wheel step starting over sky stays radial while it animates, even
+    // if the expanding globe subsequently reaches the pointer.
+    this.zoomPoint = this.hit(point) ? point : undefined
   }
   private contextMenu = (event: Event) => event.preventDefault()
 
@@ -275,6 +358,7 @@ export class BodyCameraControls {
   }
 
   dispose() {
+    this.zoomTarget = null
     this.cancelDrag()
     this.element.style.cursor = this.previousCursor
     this.element.style.touchAction = this.previousTouchAction
@@ -288,6 +372,6 @@ export class BodyCameraControls {
   }
 }
 
-export function createCameraOrbit(camera: THREE.PerspectiveCamera, element: HTMLElement, target: THREE.Vector3, minDistance: number, onStart: () => void, hitGround?: (ray: THREE.Ray) => THREE.Vector3 | null) {
-  return new BodyCameraControls(camera, element, target, minDistance, onStart, hitGround)
+export function createCameraOrbit(camera: THREE.PerspectiveCamera, element: HTMLElement, target: THREE.Vector3, minDistance: number, onStart: () => void, hitGround?: (ray: THREE.Ray) => THREE.Vector3 | null, groundRadius?: (position: THREE.Vector3) => number | undefined) {
+  return new BodyCameraControls(camera, element, target, minDistance, onStart, hitGround, groundRadius)
 }

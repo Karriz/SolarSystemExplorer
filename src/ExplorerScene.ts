@@ -104,6 +104,7 @@ export class ExplorerScene {
   showOrbits = true
   onMarkers: (markers: ScreenMarker[]) => void
   private frame = 0
+  private previousFrameTime: number | null = null
   private focusDistance: number | null = null
   private focusDirection: THREE.Vector3 | null = null
   private resizeObserver: ResizeObserver
@@ -130,6 +131,8 @@ export class ExplorerScene {
   private lastAltitudeMeters = 0
   private hitGround = (ray: THREE.Ray) => this.regional.get(this.selected as 'earth' | 'moon')?.hitGround(ray)
     ?? this.terrain.get(this.selected as TerrainBody)?.hitGround(ray) ?? null
+  private groundRadius = (position: THREE.Vector3) => this.regional.get(this.selected as 'earth' | 'moon')?.cameraSurfaceRadius(position)
+    ?? this.terrain.get(this.selected as TerrainBody)?.cameraSurfaceRadius(position) ?? radiusAu(this.selected)
   private onControlStart = () => { this.focusDistance = null; this.focusDirection = null; this.pilotAltitude = null }
 
   constructor(container: HTMLElement, onMarkers: (markers: ScreenMarker[]) => void,
@@ -156,7 +159,7 @@ export class ExplorerScene {
     this.camera.position.set(0, 8, 19)
     this.camera.lookAt(0, 0, 0)
     this.controls = createCameraOrbit(this.camera, this.renderer.domElement, new THREE.Vector3(),
-      radiusAu('sun') + SURFACE_CLEARANCE, this.onControlStart, this.hitGround)
+      radiusAu('sun') + SURFACE_CLEARANCE, this.onControlStart, this.hitGround, this.groundRadius)
 
     this.scene.add(new THREE.AmbientLight('#c5d8f0', .25))
     // Normalize brightness across orbital distances so every globe shows its solar terminator.
@@ -411,11 +414,13 @@ export class ExplorerScene {
   private rebaseControls() {
     const target = this.controls.target, minDistance = this.controls.minDistance
     this.controls.dispose()
-    this.controls = createCameraOrbit(this.camera, this.renderer.domElement, target, minDistance, this.onControlStart, this.hitGround)
+    this.controls = createCameraOrbit(this.camera, this.renderer.domElement, target, minDistance, this.onControlStart, this.hitGround, this.groundRadius)
   }
 
-  private tick = () => {
+  private tick = (timestamp = performance.now()) => {
     this.frame = requestAnimationFrame(this.tick)
+    const deltaSeconds = this.previousFrameTime === null ? 1 / 60 : Math.min(.1, Math.max(0, (timestamp - this.previousFrameTime) / 1000))
+    this.previousFrameTime = timestamp
     const target = vector(this.selected, this.date)
     this.origin.copy(target)
     for (const id of bodyOrder) {
@@ -430,8 +435,9 @@ export class ExplorerScene {
     if (this.focusDistance !== null) {
       const offset = this.camera.position.clone().sub(this.controls.target)
       const distance = offset.length()
-      const next = Math.exp(Math.log(Math.max(distance, 1e-8)) * .935 + Math.log(this.focusDistance) * .065)
-      if (this.focusDirection) offset.normalize().lerp(this.focusDirection, .045).normalize()
+      const blend = 1 - Math.pow(.935, deltaSeconds * 60)
+      const next = Math.exp(THREE.MathUtils.lerp(Math.log(Math.max(distance, 1e-8)), Math.log(this.focusDistance), blend))
+      if (this.focusDirection) offset.normalize().lerp(this.focusDirection, 1 - Math.pow(.955, deltaSeconds * 60)).normalize()
       this.camera.position.copy(this.controls.target).add(offset.setLength(next))
       this.camera.lookAt(this.controls.target)
       if (Math.abs(Math.log(next / this.focusDistance)) < .003 && (!this.focusDirection || offset.angleTo(this.focusDirection) < .003)) {
@@ -459,14 +465,16 @@ export class ExplorerScene {
         if (ground) this.camera.position.copy(normal).multiplyScalar(ground.length() + this.pilotAltitude.altitude / 149_597_870_700)
       }
     }
+    this.controls.update(deltaSeconds)
+    // Sample after smoothed zoom has moved the camera: its footprint may
+    // already be over different terrain in this frame.
     const collisionSurfaces = bodyOrder.map(id => ({
       center: this.bodies.get(id)!.position,
       radius: this.regional.get(id as 'earth' | 'moon')?.cameraSurfaceRadius(this.camera.position)
         ?? this.terrain.get(id as TerrainBody)?.cameraSurfaceRadius(this.camera.position) ?? radiusAu(id),
     }))
-    this.lastAltitudeMeters = (this.camera.position.distanceTo(selectedBody.position) - collisionSurfaces[bodyOrder.indexOf(this.selected)].radius) * 149_597_870_700
-    this.controls.minDistance = collisionSurfaces[bodyOrder.indexOf(this.selected)].radius + SURFACE_CLEARANCE
-    this.controls.update()
+    const selectedSurface = collisionSurfaces[bodyOrder.indexOf(this.selected)]
+    this.controls.minDistance = selectedSurface.radius + SURFACE_CLEARANCE
     const near = constrainCamera(
       this.camera.position,
       this.controls.target,
@@ -477,6 +485,7 @@ export class ExplorerScene {
     )
     // A collision with another body must not move the selected body's pivot.
     this.controls.target.set(0, 0, 0)
+    this.lastAltitudeMeters = (this.camera.position.distanceTo(selectedBody.position) - selectedSurface.radius) * 149_597_870_700
     if (Math.abs(near - this.camera.near) > this.camera.near * .01) {
       this.camera.near = near
       this.camera.updateProjectionMatrix()
