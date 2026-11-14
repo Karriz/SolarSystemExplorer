@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { ArrowLeft, ChevronDown, Clock3, Compass, Focus, Info, Layers3, Pause, Play, RotateCcw, Search, X } from 'lucide-react'
 import { ExplorerScene, type ScreenMarker } from './ExplorerScene'
 import { bodyInfo, bodyOrder, positionAt, type BodyId } from './ephemeris'
+import { atmosphereProfiles } from './atmosphereProfiles'
 import { textureSources } from './textureSources'
 import { surfaceTileSources, type TileBody } from './surfaceTiles'
 import type { TerrainStatus } from './GlobeTerrainLayer'
@@ -34,6 +35,7 @@ export default function App() {
   const dateRef = useRef(new Date())
   const [date, setDate] = useState(dateRef.current)
   const [selected, setSelected] = useState<BodyId>('sun')
+  const [venusSurfaceView, setVenusSurfaceView] = useState(false)
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
   const [showOrbits, setShowOrbits] = useState(true)
@@ -186,6 +188,10 @@ export default function App() {
         <p>{selectedInfo.description}</p>
         <div className="info-stat"><span>MEAN RADIUS</span><strong>{Math.round(selectedInfo.radiusKm).toLocaleString()} km</strong></div>
         <div className="info-stat"><span>POSITION</span><strong>{distanceLabel(selected, date)}</strong></div>
+        {selected === 'venus' && <div className="terrain-controls">
+          <div className="terrain-options"><button aria-pressed={venusSurfaceView} onClick={() => { const reveal = !venusSurfaceView; sceneRef.current?.setAtmosphereVisible('venus', !reveal); setVenusSurfaceView(reveal) }}>{venusSurfaceView ? 'Show atmosphere and clouds' : 'Reveal surface'}</button></div>
+          <div className="surface-source">{venusSurfaceView ? 'Scientific surface view · atmosphere and clouds hidden' : 'Visible-light model · the cloud deck obscures the surface'}</div>
+        </div>}
         {selected !== 'sun' && <div className="surface-source">Rotation: <a href={selected === 'earth' ? 'https://aa.usno.navy.mil/faq/GAST' : 'https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc'} target="_blank" rel="noreferrer">{selected === 'earth' ? 'USNO sidereal time' : 'JPL NAIF planetary constants'}</a> · approximate</div>}
         {textureSources[selected] && !surfaceProfile && <div className="surface-source">Surface: <a href={textureSources[selected]!.page} target="_blank" rel="noreferrer">{textureSources[selected]!.label}</a> · {textureSources[selected]!.credit}</div>}
         {surfaceProfile && <>
@@ -194,6 +200,8 @@ export default function App() {
           {surfaceColorStatus?.message && <div role="status" className="surface-source">{surfaceColorStatus.message}</div>}
         </>}
         {selected !== 'earth' && !surfaceProfile && selected in surfaceTileSources && <div className="surface-source">Detail: <a href={surfaceTileSources[selected as TileBody].page} target="_blank" rel="noreferrer">{surfaceTileSources[selected as TileBody].label}</a> · {surfaceTileSources[selected as TileBody].credit}</div>}
+        {(selected === 'earth' || selected === 'mars' || selected === 'venus') && <div className="surface-source">Atmosphere: <a href={atmosphereProfiles[selected].source} target="_blank" rel="noreferrer">{selected === 'earth' ? 'Modeled clear air' : selected === 'mars' ? 'Modeled dust haze' : 'Modeled dense air and clouds'}</a> · {selected === 'venus' ? 'generated structure · illustrative motion' : 'fixed conditions'}</div>}
+
         {selected === 'earth' && <div className="terrain-controls">
           <div className="surface-source">Explore measured terrain</div>
           <div role="status" className="surface-source">{!terrainEnabled ? 'Terrain off' : regionalStatus?.ready ? 'Measured terrain' : regionalStatus?.failed ? 'Regional detail unavailable · showing fallback' : regionalStatus?.requests ? 'Loading regional relief…' : 'Terrain loads as you explore'}</div>

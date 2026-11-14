@@ -18,6 +18,7 @@ try {
   const subsolar = await page.evaluate(() => {
     terrainPilot.date('2026-10-26T12:00:00Z'); terrainPilot.metrics()
     const s = __venusViews, body = s.bodies.get('venus')
+    s.setAtmosphereVisible('venus', false)
     s.setOrbits(false); body.updateWorldMatrix(true, false)
     const local = body.worldToLocal(s.bodies.get('sun').position.clone()).normalize()
     return { lat: Math.asin(local.y)*180/Math.PI, lon: Math.atan2(-local.z,local.x)*180/Math.PI }

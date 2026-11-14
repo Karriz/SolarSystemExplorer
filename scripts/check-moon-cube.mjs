@@ -15,7 +15,7 @@ try{
  await page.route('**/src/ExplorerScene.ts*',async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text()).replace('pilotMetrics() {','pilotMetrics() { window.__cubeScene=this;')})})
  await page.goto(`${url}/?terrainPilot=1`,{waitUntil:'domcontentloaded'})
  await page.waitForFunction(()=>window.terrainPilot)
- await page.evaluate(()=>{terrainPilot.metrics();terrainPilot.date('2026-10-26T12:00:00Z');__cubeScene.setSurfaceDetail(false);__cubeScene.setTerrainShadows(false)})
+ await page.evaluate(body=>{terrainPilot.metrics();terrainPilot.date('2026-10-26T12:00:00Z');__cubeScene.setSurfaceDetail(false);__cubeScene.setTerrainShadows(false);if(body==='mars'||body==='venus')__cubeScene.setAtmosphereVisible(body,false)},body)
  const settle=async()=>{
   // Software WebGL can dominate streaming time. This optional mode still
   // runs normal LOD/camera updates and renders each settled view below.

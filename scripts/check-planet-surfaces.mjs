@@ -28,6 +28,7 @@ async function open(options = {}) {
 }
 
 async function visit(page, body, lat, lon, altitude = 300000) {
+  if (body === 'venus') await page.evaluate(() => __planetScene.setAtmosphereVisible('venus', false))
   await page.evaluate(({ body, lat, lon, altitude }) => terrainPilot.location(body, lat, lon, altitude), { body, lat, lon, altitude })
   await page.waitForFunction(body => {
     const m = terrainPilot.metrics()

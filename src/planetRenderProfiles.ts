@@ -33,7 +33,7 @@ export const planetRenderProfiles = {
     noDataColor: [0.0953074666, 0.0908417112, 0.0843762115],
     fallbackColor: { file: 'venus-color-reference.png', message: 'Compact color unavailable · showing inferred basalt reference' },
     colorSource: { url: 'https://ntrs.nasa.gov/citations/19870039592', label: 'Venera-informed basalt color model', credit: 'Pieters et al. (1986) / NASA NTRS; illustrative material' },
-    colorDescription: 'Inferred dark, nearly neutral basalt under white light; not a measured global color map. Clouds and atmospheric orange illumination are omitted. Relief is measured Magellan topography; nearby rock detail is generated.',
+    colorDescription: 'Ground beneath the clouds: inferred basalt, not measured global visible color. Relief is measured Magellan topography; nearby rock detail is generated. Atmospheric illumination is modeled separately.',
   },
   mars: {
     id: 'mars', generatedDetail: true, originalColorWidth: 1440, detail: MARS_DETAIL_PROFILE, cubeColorSampling: true,

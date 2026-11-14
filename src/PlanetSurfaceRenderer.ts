@@ -9,6 +9,9 @@ import { configureTerrainHillshade, type HillshadeState } from './terrainHillsha
 import type { SurfaceState } from './surfaceMaterial.ts'
 import { planetRenderProfiles, type SolidSurfaceProfile, type SolidSurfaceBody } from './planetRenderProfiles.ts'
 import { loadSurfaceDetail } from './surfaceAssets.ts'
+import { configureAtmosphericLighting } from './atmosphericLighting.ts'
+import type { AtmosphericLighting } from './AtmosphereRenderer.ts'
+import { atmosphereProfiles } from './atmosphereProfiles.ts'
 
 export type SurfaceColorMode = 'loading' | 'compact' | 'original' | 'unavailable'
 export type SurfaceColorStatus = { mode: SurfaceColorMode; message: string }
@@ -36,7 +39,8 @@ export class PlanetSurfaceRenderer {
     state: SurfaceState, renderer: THREE.WebGLRenderer,
     terrainUrl: string, hillshadeEnabled: HillshadeState,
     onTerrainStatus: (status: TerrainStatus) => void,
-    onColorStatus: (body: SolidSurfaceBody, status: SurfaceColorStatus) => void) {
+    onColorStatus: (body: SolidSurfaceBody, status: SurfaceColorStatus) => void,
+    atmosphericLighting?: AtmosphericLighting) {
     this.id = id
     this.body = body
     this.state = state
@@ -53,11 +57,13 @@ export class PlanetSurfaceRenderer {
       true, undefined, undefined, profile.detail)
     if (profile.cubeColorSampling) configureCubeColorMaterial(this.material)
     configureTerrainHillshade(this.material, hillshadeEnabled, this.hillshade)
+    const air = id === 'mars' || id === 'venus' ? atmosphereProfiles[id] : undefined
+    if (air && atmosphericLighting) configureAtmosphericLighting(this.material, atmosphericLighting, true, air)
     body.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })
     configurePlanetSurfaceMaterial(body.customDepthMaterial, state, 149_597_870_700,
       true, undefined, this.shade.camera, profile.detail)
     this.terrain = new CubeTerrainLayer(body, onTerrainStatus, terrainUrl, state,
-      hillshadeEnabled, id, this.hillshade, profile)
+      hillshadeEnabled, id, this.hillshade, profile, air && atmosphericLighting ? { state: atmosphericLighting, profile: air } : undefined)
   }
 
   private async loadColor() {

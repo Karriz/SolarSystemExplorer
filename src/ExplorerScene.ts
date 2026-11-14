@@ -16,6 +16,8 @@ import { EarthSurfaceRenderer } from './EarthSurfaceRenderer'
 import { surfaceState } from './surfaceMaterial'
 import { geoDirection, pilotLocations } from './terrainPilot'
 import { fitTerrainShadow } from './terrainShadows'
+import { AtmosphereRenderPipeline } from './AtmosphereRenderPipeline'
+import type { AtmosphereBody } from './atmosphereProfiles'
 
 export type ScreenMarker = { id: BodyId; x: number; y: number; visible: boolean }
 const DAY_MS = 86400000
@@ -92,6 +94,7 @@ function makeStars(): THREE.Points {
 
 export class ExplorerScene {
   readonly renderer: THREE.WebGLRenderer
+  private readonly renderPipeline: AtmosphereRenderPipeline
   readonly camera: THREE.PerspectiveCamera
   controls: BodyCameraControls
   readonly scene = new THREE.Scene()
@@ -120,6 +123,7 @@ export class ExplorerScene {
   private earthSurface!: EarthSurfaceRenderer
   private planetSurfaces = new Map<SolidSurfaceBody, PlanetSurfaceRenderer>()
   private terrainHillshade = { value: 1 }
+  private venusHillshade = { value: 0 }
   private disposed = false
   private surfaceTiles: GlobeTileLayer
   private terrain = new Map<TerrainBody, GlobeTerrainLayer | CubeTerrainLayer>()
@@ -154,6 +158,7 @@ export class ExplorerScene {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.toneMappingExposure = 1.7
+    this.renderPipeline = new AtmosphereRenderPipeline(this.renderer)
     container.appendChild(this.renderer.domElement)
     this.camera = new THREE.PerspectiveCamera(48, 1, 0.000001, 200)
     this.camera.position.set(0, 8, 19)
@@ -172,7 +177,8 @@ export class ExplorerScene {
     for (const id of terrainBodies) {
       if (isSolidSurfaceBody(id)) {
         const surface = new PlanetSurfaceRenderer(id, this.bodies.get(id)!, this.surfaces[id],
-          this.renderer, terrainUrl, this.terrainHillshade, onTerrainStatus, onColorStatus)
+          this.renderer, terrainUrl, id === 'venus' ? this.venusHillshade : this.terrainHillshade, onTerrainStatus, onColorStatus,
+          id === 'mars' || id === 'venus' ? this.renderPipeline.atmospheres[id].lighting : undefined)
         this.planetSurfaces.set(id, surface)
         this.terrain.set(id, surface.terrain)
       } else {
@@ -180,7 +186,7 @@ export class ExplorerScene {
           terrainUrl, undefined, id, undefined, this.terrainHillshade))
       }
     }
-    this.earthSurface = new EarthSurfaceRenderer(this.bodies.get('earth')!, this.surfaces.earth, this.renderer)
+    this.earthSurface = new EarthSurfaceRenderer(this.bodies.get('earth')!, this.surfaces.earth, this.renderer, this.renderPipeline.atmosphere.lighting)
     this.regional.set('earth', this.earthSurface.terrain)
     this.regional.set('moon', new RegionalTerrainLayer(this.bodies.get('moon')!, 'moon', this.surfaces.moon))
     this.updateBodyOrientations()
@@ -337,6 +343,17 @@ export class ExplorerScene {
   setTerrain(enabled: boolean, body?: BodyId) { this.terrain.forEach((layer, id) => { if (!body || id === body) layer.setEnabled(enabled) }); this.regional.forEach((layer, id) => { if (!body || id === body) layer.setEnabled(enabled) }) }
   setTerrainExaggeration(value: number, body?: BodyId) { this.terrain.forEach((layer, id) => { if (!body || id === body) layer.setExaggeration(value) }); this.regional.forEach((layer, id) => { if (!body || id === body) layer.setExaggeration(value) }) }
   setTerrainHillshade(enabled: boolean) { this.terrainHillshade.value = enabled ? 1 : 0 }
+  setAtmosphereVisible(body: AtmosphereBody, visible: boolean) {
+    this.renderPipeline.atmospheres[body].enabled = visible
+    if (body === 'venus') this.venusHillshade.value = visible ? 0 : 1
+  }
+
+  private surfaceSelected(id: BodyId) {
+    if (id !== this.selected) return false
+    // Hidden terrain does not need to stream behind an opaque cloud deck.
+    return id !== 'venus' || !this.renderPipeline.atmospheres.venus.enabled
+      || this.camera.position.distanceTo(this.bodies.get('venus')!.position) * 149_597_870_700 - bodyInfo.venus.radiusKm * 1000 < 100000
+  }
   private terrainShadows = true
   private bodyTerrainShadows = new Map<BodyId, boolean>()
   setTerrainShadows(enabled: boolean, body?: BodyId) { if (body) this.bodyTerrainShadows.set(body, enabled); else this.terrainShadows = enabled }
@@ -359,13 +376,14 @@ export class ExplorerScene {
     this.rebaseControls()
   }
   pilotImageSample() {
-    this.renderer.render(this.scene, this.camera)
+    this.renderFrame()
     const gl = this.renderer.getContext(), pixels = new Uint8Array(32 * 32 * 4)
     gl.readPixels(Math.floor(gl.drawingBufferWidth / 2)-16, Math.floor(gl.drawingBufferHeight / 2)-16, 32, 32, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
     return Array.from(pixels)
   }
   pilotMetrics() {
-    return { surfaces: { ...Object.fromEntries([...this.planetSurfaces].map(([id, surface]) => [id, surface.metrics()])), earth: this.earthSurface.metrics() }, hillshade: Object.fromEntries([...this.planetSurfaces].map(([id, surface]) => [id, surface.hillshade.metrics()])), selected: this.selected, elevationDecoder: 'libwebp-wasm', sunElevationDegrees: THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(this.camera.position.clone().normalize().dot(this.sunLight.position.clone().sub(this.bodies.get(this.selected)!.position).normalize()), -1, 1))), altitudeMeters: this.lastAltitudeMeters, classificationReady: this.earthSurface.vectors.metrics().ready, lunarSourceError: '', global: Object.fromEntries([...this.terrain].map(([id, layer]) => [id, layer.metrics()])), regional: Object.fromEntries([...this.regional].map(([id, layer]) => [id, layer.metrics()])),
+    // Final-frame diagnostics include HDR allocation and compatibility fallback.
+    return { renderPipeline: this.renderPipeline.metrics(), surfaces: { ...Object.fromEntries([...this.planetSurfaces].map(([id, surface]) => [id, surface.metrics()])), earth: this.earthSurface.metrics() }, hillshade: Object.fromEntries([...this.planetSurfaces].map(([id, surface]) => [id, surface.hillshade.metrics()])), selected: this.selected, elevationDecoder: 'libwebp-wasm', sunElevationDegrees: THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(this.camera.position.clone().normalize().dot(this.sunLight.position.clone().sub(this.bodies.get(this.selected)!.position).normalize()), -1, 1))), altitudeMeters: this.lastAltitudeMeters, classificationReady: this.earthSurface.vectors.metrics().ready, lunarSourceError: '', global: Object.fromEntries([...this.terrain].map(([id, layer]) => [id, layer.metrics()])), regional: Object.fromEntries([...this.regional].map(([id, layer]) => [id, layer.metrics()])),
       renderer: { calls: this.renderer.info.render.calls, triangles: this.renderer.info.render.triangles, textures: this.renderer.info.memory.textures, geometries: this.renderer.info.memory.geometries } }
   }
 
@@ -452,7 +470,7 @@ export class ExplorerScene {
     const now = performance.now(), viewportHeight = this.container.clientHeight * this.renderer.getPixelRatio()
     let terrainBody: TerrainBody | null = null
     for (const [id, layer] of this.terrain) {
-      layer.update(this.camera, viewportHeight, now, this.selected === id)
+      layer.update(this.camera, viewportHeight, now, this.surfaceSelected(id))
       if (layer.active) terrainBody = id
     }
     for (const [id, layer] of this.regional) layer.update(this.camera, viewportHeight, now, this.selected === id)
@@ -494,7 +512,7 @@ export class ExplorerScene {
     this.earthSurface.update(this.camera, viewportHeight, now, this.selected === 'earth')
     this.regional.get('earth')?.updateShadeCamera(this.camera)
     this.regional.get('moon')?.updateShadeCamera(this.camera)
-    this.planetSurfaces.forEach((surface, id) => surface.update(this.camera, viewportHeight, now, this.selected === id))
+    this.planetSurfaces.forEach((surface, id) => surface.update(this.camera, viewportHeight, now, this.surfaceSelected(id)))
     this.surfaceTiles.update(this.camera, viewportHeight, now, terrainBody)
     const closeTerrain = this.selected === 'moon' ? !!this.terrain.get('moon')?.active
       : !!this.regional.get(this.selected as 'earth' | 'moon')?.metrics().ready
@@ -510,7 +528,7 @@ export class ExplorerScene {
       fitTerrainShadow(this.terrainSun, this.camera, ground, sunlight, this.lastAltitudeMeters,
         selectedBody.position, radiusAu(this.selected))
     }
-    this.renderer.render(this.scene, this.camera)
+    this.renderFrame()
     const regionalStatus = [...this.regional].map(([id, layer]) => [id, layer.metrics()] as const)
     const metricsKey = JSON.stringify(regionalStatus)
     if (metricsKey !== this.pilotMetricsKey) {
@@ -536,9 +554,17 @@ export class ExplorerScene {
     this.onMarkers(markers)
   }
 
+  private renderFrame() {
+    this.renderPipeline.render(this.scene, this.camera, (['earth', 'mars', 'venus'] as const).map(id => ({
+      id, date: this.date, body: this.bodies.get(id)!, sun: this.bodies.get('sun')!.position, solarColor: this.sunLight.color,
+      stars: { material: this.stars.material as THREE.PointsMaterial, opacity: .72 },
+    })))
+  }
+
   private resize() {
     const width = this.container.clientWidth, height = this.container.clientHeight
     this.renderer.setSize(width, height)
+    this.renderPipeline.resize()
     this.camera.aspect = width / Math.max(height, 1)
     this.camera.updateProjectionMatrix()
   }
@@ -556,6 +582,8 @@ export class ExplorerScene {
     Object.values(this.surfaces).forEach(s => s.mediumDetailMap.value?.dispose())
     this.surfaceTiles.dispose()
     this.terrain.forEach((layer, id) => { if (!isSolidSurfaceBody(id)) layer.dispose() })
+    // Atmosphere-owned proxy meshes detach before generic scene disposal.
+    this.renderPipeline.dispose()
     this.scene.traverse(object => {
       if (object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Points || object instanceof THREE.Sprite) {
         object.geometry?.dispose()

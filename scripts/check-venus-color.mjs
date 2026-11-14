@@ -25,6 +25,7 @@ try {
     terrainPilot.date('2026-10-26T12:00:00Z')
     terrainPilot.location('venus', 20, 160, 300000)
   })
+  await page.getByRole('button', { name: 'Reveal surface', exact: true }).click()
   await page.waitForFunction(() => terrainPilot.metrics().surfaces.venus.color === 'compact', null, { timeout: 120000 })
   await page.evaluate(() => {
     const s = __venus
@@ -67,6 +68,7 @@ try {
   await fallback.goto(`${url}/?terrainPilot=1`, { waitUntil: 'domcontentloaded' })
   await fallback.waitForFunction(() => window.terrainPilot)
   await fallback.evaluate(() => terrainPilot.location('venus', 20, 160, 300000))
+  await fallback.getByRole('button', { name: 'Reveal surface', exact: true }).click()
   await fallback.waitForFunction(() => terrainPilot.metrics().surfaces.venus.color === 'original', null, { timeout: 60000 })
   await fallback.getByRole('link', { name: 'Venera-informed basalt color model', exact: true }).waitFor()
   await fallback.getByRole('status').filter({ hasText: 'Compact color unavailable · showing inferred basalt reference' }).waitFor()

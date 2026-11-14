@@ -12,7 +12,7 @@ try{
  const requests=[];page.on('request',r=>requests.push(r.url()))
  await page.route('**/src/ExplorerScene.ts*',async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text()).replace('pilotMetrics() {','pilotMetrics() { window.__surface=this;')})})
  await page.goto(`${url}/?terrainPilot=1`,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>window.terrainPilot)
- report.defaults=await page.evaluate(()=>{terrainPilot.metrics();terrainPilot.date('2026-10-26T12:00:00Z');const s=__surface;s.setTerrainShadows(false);s.setSurfaceDetail(false);s.__render=s.renderer.render;s.renderer.render=()=>{};return [...s.planetSurfaces.values()].map(p=>({id:p.id,detail:p.state.detail.value,hillshade:p.hillshade.enabled.value}))})
+ report.defaults=await page.evaluate(()=>{terrainPilot.metrics();terrainPilot.date('2026-10-26T12:00:00Z');const s=__surface;s.setAtmosphereVisible('venus',false);s.setAtmosphereVisible('mars',false);s.setTerrainShadows(false);s.setSurfaceDetail(false);s.__render=s.renderer.render;s.renderer.render=()=>{};return [...s.planetSurfaces.values()].map(p=>({id:p.id,detail:p.state.detail.value,hillshade:p.hillshade.enabled.value}))})
  assert.deepEqual([...report.defaults].sort((a,b)=>a.id.localeCompare(b.id)),['mars','mercury','moon','venus'].map(id=>({id,detail:0,hillshade:1})))
  const settle=async body=>{
   let previous='',stable=0

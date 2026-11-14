@@ -10,6 +10,8 @@ import type { SurfaceState } from './surfaceMaterial.ts'
 import type { SolidSurfaceProfile } from './planetRenderProfiles.ts'
 import type { SurfaceColorMode } from './PlanetSurfaceRenderer.ts'
 import type { TileAddress, TileBounds } from './surfaceTiles.ts'
+import type { AtmosphericLighting } from './AtmosphereRenderer.ts'
+import { configureAtmosphericLighting } from './atmosphericLighting.ts'
 
 export const earthRenderProfile: SolidSurfaceProfile = {
   id: 'earth', detail: EARTH_DETAIL_PROFILE, cubeColorSampling: false, originalColorWidth: 5400,
@@ -41,12 +43,18 @@ export class EarthSurfaceRenderer {
   private readonly body: THREE.Mesh
   readonly state: SurfaceState
   private readonly renderer: THREE.WebGLRenderer
-  constructor(body: THREE.Mesh, state: SurfaceState, renderer: THREE.WebGLRenderer) {
+  private readonly atmosphericLighting?: AtmosphericLighting
+  private readonly overviewGeometry: THREE.BufferGeometry
+  private closeGeometry?: THREE.SphereGeometry
+  constructor(body: THREE.Mesh, state: SurfaceState, renderer: THREE.WebGLRenderer, atmosphericLighting?: AtmosphericLighting) {
     this.body = body; this.state = state; this.renderer = renderer
+    this.overviewGeometry = body.geometry
     this.placeholder.needsUpdate = true
     state.detail.value = 1; state.colorSharpen.value = 0
     this.material = body.material as THREE.MeshStandardMaterial
     this.shade = configureEarthSurfaceMaterial(this.material, state, this.materialState, 149_597_870_700, true)
+    this.atmosphericLighting = atmosphericLighting
+    if (atmosphericLighting) configureAtmosphericLighting(this.material, atmosphericLighting, true)
     body.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })
     // Shared clipping/depth contract; appearance masks do not alter depth programs.
     configureEarthSurfaceMaterial(body.customDepthMaterial, state, this.materialState, 149_597_870_700, true)
@@ -91,6 +99,10 @@ export class EarthSurfaceRenderer {
   }
   update(camera: THREE.PerspectiveCamera, _height: number, now: number, selected: boolean) {
     if (this.disposed) return
+    // More silhouette samples prevent a sawtooth ground horizon on the
+    // reference globe. Measured regional meshes are untouched.
+    if (selected && !this.closeGeometry) this.closeGeometry = new THREE.SphereGeometry((this.overviewGeometry as THREE.SphereGeometry).parameters.radius, 512, 256)
+    this.body.geometry = selected ? this.closeGeometry! : this.overviewGeometry
     if (selected && !this.started) {
       this.started = true; void this.loadColor(); void this.loadGlobal()
       loadSurfaceDetail('earth', this.state, this.renderer, () => this.disposed)
@@ -101,7 +113,9 @@ export class EarthSurfaceRenderer {
     if (!selected) { this.lakeHeights.clear(); this.lakeAttempts.clear(); this.maskPlan = [] }
   }
   configurePatch(material: THREE.Material, origin: THREE.Vector3, camera: { value: THREE.Vector3 }, binding: EarthMaskBinding) {
-    return configureEarthSurfaceMaterial(material, this.state, this.materialState, 6371000, false, origin, camera, binding)
+    const shade = configureEarthSurfaceMaterial(material, this.state, this.materialState, 6371000, false, origin, camera, binding)
+    if (this.atmosphericLighting) configureAtmosphericLighting(material, this.atmosphericLighting)
+    return shade
   }
   binding() { return earthMaskBinding() }
   bind(address: TileAddress, binding: EarthMaskBinding) {
@@ -162,7 +176,8 @@ export class EarthSurfaceRenderer {
     }
     const colorPixels = pixels(this.color.texture), detailPixels = pixels(this.state.detailMap.value) + pixels(this.state.mediumDetailMap.value)
     const waterPixels = this.materialState.globalReady.value ? pixels(this.materialState.global.value) : 0
-    const assets = { colorGpuBytes: Math.ceil(colorPixels * 4 * 4 / 3), colorDecodedBytes: colorPixels * 4,
+    const referenceGeometryBytes = this.closeGeometry ? Object.values(this.closeGeometry.attributes).reduce((sum, a) => sum + a.array.byteLength, 0) + (this.closeGeometry.index?.array.byteLength ?? 0) : 0
+    const assets = { referenceGeometryBytes, colorGpuBytes: Math.ceil(colorPixels * 4 * 4 / 3), colorDecodedBytes: colorPixels * 4,
       detailGpuBytes: Math.ceil(detailPixels * 4 * 4 / 3), detailDecodedBytes: detailPixels * 4,
       waterGpuBytes: Math.ceil(waterPixels * 4 / 3), waterDecodedBytes: waterPixels }
     return { color: this.colorMode, water: this.materialState.globalReady.value > 0 ? 'mapped overview' : this.globalError ? 'unavailable' : 'loading',
@@ -173,6 +188,8 @@ export class EarthSurfaceRenderer {
   dispose() {
     if (this.disposed) return
     this.disposed = true; this.controller.abort(); this.vectors.dispose(); this.terrain.dispose()
+    this.body.geometry = this.overviewGeometry
+    this.closeGeometry?.dispose(); this.closeGeometry = undefined
     if (this.material.map === this.color.texture) this.material.map = null
     this.color.dispose(); this.placeholder.dispose()
     if (this.materialState.globalReady.value) this.materialState.global.value.dispose()

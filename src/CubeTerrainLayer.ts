@@ -1,4 +1,7 @@
 import * as THREE from 'three'
+import { configureAtmosphericLighting } from './atmosphericLighting.ts'
+import type { AtmosphericLighting } from './AtmosphereRenderer.ts'
+import type { AtmosphereProfile } from './atmosphereProfiles.ts'
 import { bodyInfo } from './ephemeris.ts'
 import type { TerrainBody } from './terrain.ts'
 import { cubeChildren,cubeDirection,cubeFaceUv,cubeGrid,cubeKey,cubeRoots,cubeTerrainGeometry,cubeUvBounds,sampleCubeSurface,type CubeAddress } from './cubeSphere.ts'
@@ -53,7 +56,7 @@ export class CubeTerrainLayer {
   private radiusMeters:number
   private bodyId:TerrainBody
   private readonly profile:SolidSurfaceProfile
-  constructor(body:THREE.Mesh,onStatus:(status:TerrainStatus)=>void,baseUrl:string,surface?:SurfaceState,hillshade?:HillshadeState,bodyId:TerrainBody='moon',hillshadeTexture?:GlobalHillshadeLayer,profile:SolidSurfaceProfile=planetRenderProfiles[bodyId]){
+  constructor(body:THREE.Mesh,onStatus:(status:TerrainStatus)=>void,baseUrl:string,surface?:SurfaceState,hillshade?:HillshadeState,bodyId:TerrainBody='moon',hillshadeTexture?:GlobalHillshadeLayer,profile:SolidSurfaceProfile=planetRenderProfiles[bodyId],atmosphere?:{state:AtmosphericLighting;profile:AtmosphereProfile}){
     this.body=body;this.onStatus=onStatus;this.surface=surface;this.bodyId=bodyId;this.profile=profile
     this.radiusMeters=bodyInfo[bodyId].radiusKm*1000
     this.base=body.material as THREE.MeshStandardMaterial
@@ -70,6 +73,7 @@ export class CubeTerrainLayer {
     if(surface)this.shade=configurePlanetSurfaceMaterial(this.material,surface,this.radiusMeters,true,undefined,undefined,detailProfile)
     if(this.profile.cubeColorSampling)configureCubeColorMaterial(this.material)
     if(hillshade)configureTerrainHillshade(this.material,hillshade,hillshadeTexture)
+    if(atmosphere)configureAtmosphericLighting(this.material,atmosphere.state,false,atmosphere.profile)
     this.group.name=`${bodyId}-cube-terrain`;this.group.scale.setScalar((body.geometry as THREE.SphereGeometry).parameters.radius)
     body.add(this.group)
     this.fallback=sphereSurfaceSampler(body.geometry as THREE.SphereGeometry)

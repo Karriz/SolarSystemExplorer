@@ -5,6 +5,12 @@ color sampler, physical material detail, and bounded streamed hillshade used by
 Moon, Mars and Mercury. Heights remain the existing authoritative geographic
 Magellan release; cube meshes only resample this release for rendering.
 
+The default visible-light view now includes a modeled dense atmosphere and
+cloud deck. **Reveal surface** opens the scientific view described below;
+**Show atmosphere and clouds** returns to the natural-view model. See
+[atmosphere rendering](atmosphere-rendering.md) for optical assumptions,
+generated cloud structure, illustrative motion, and validation limits.
+
 ## Height data
 
 The installed immutable release is
@@ -45,10 +51,12 @@ uniform, slightly warm, dark basalt material under white light. Linear RGB
 not calibrated Venera reflectance or a claim about every location on Venus.
 Measured landforms supply global geographic variation through shading.
 
-Clouds and orange atmospheric illumination are omitted to expose terrain.
-This is an inferred cloud-free surface visualization, not Venus's visible
-appearance from orbit or a simulation of standing beneath its atmosphere.
-Both the information panel and asset metadata state these limits.
+In the scientific surface view, clouds and atmospheric illumination are hidden
+to expose terrain. In the default view they are modeled separately from this
+ground material: clouds obscure the ground from orbit, and illumination below
+them is predominantly diffuse and warm. Cartographic hillshade is enabled for
+surface inspection and disabled in the dense-atmosphere view. The ground color
+asset remains an inferred cloud-free visualization, not measured global RGB.
 
 The lossless 4096 × 2048 WebP is 396 bytes. Its PNG fallback uses the same
 inferred color; network failure never silently restores the orange radar map.
