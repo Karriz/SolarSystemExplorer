@@ -7,9 +7,9 @@ npm install
 npm run dev
 ```
 
-Use the URL Vite prints. Left drag orbits and smoothly becomes a surface grab nearby. Right drag tilts and turns around a fixed ground point chosen at the center of the view when the drag begins; farther away it becomes orbital movement. Nearby scroll/pinch zoom follows the pointed surface. Wheel zoom eases toward the requested height and reverses immediately when scrolling changes direction. Ground dragging and tilting preserve height above sampled terrain, with the local planet normal providing a stable vertical. Zooming out gradually restores orbital aim and compass orientation. The camera can approach to 100 m above loaded terrain. Heights and orientation remain approximations, not survey-grade navigation.
+Use the URL Vite prints. Left drag orbits and smoothly becomes a surface grab nearby. Right drag tilts and turns around a fixed ground point chosen at the center of the view when the drag begins; farther away it becomes orbital movement. Scroll/pinch zoom follows the pointed surface as the planet fills the view and preserves the camera's direction relative to the local planet surface throughout the approach, including at the screen edges. Wheel zoom eases toward the requested height and reverses immediately when scrolling changes direction. Ground dragging and tilting preserve height above sampled terrain, with the local planet normal providing a stable vertical. Zooming out gradually restores orbital aim and compass orientation. The camera can approach to 100 m above loaded terrain. Heights and orientation remain approximations, not survey-grade navigation.
 
-Run `npm run camera:check` against Vite on port 5175 (or set `CAMERA_PREVIEW_URL`) for browser checks of ground pivots, animated zoom, both lunar poles, the return to orbit, and a phone viewport. Screenshots and results are saved under `.terrain-cache/camera-controls/`.
+Run `npm run camera:check` against Vite on port 5175 (or set `CAMERA_PREVIEW_URL`) for browser checks of off-center approaches from orbit to ground, ground pivots, animated zoom, both lunar poles, the return to orbit, and a phone viewport. Screenshots and results are saved under `.terrain-cache/camera-controls/`.
 
 ## Terrain and material pilot
 

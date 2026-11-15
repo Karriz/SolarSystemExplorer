@@ -125,7 +125,7 @@ test('zooming out progressively restores orbital aim and compass orientation', (
     camera.position.setLength(radius * 1.8)
     controls.update()
     assert.ok(camera.quaternion.angleTo(orbital) < 1e-7)
-    for (let i = 0; i < 40; i++) wheel(element, -3000)
+    for (let i = 0; i < 40; i++) wheel(element, -3000, 400, 300)
     close(camera.position.length() / radius, 1 + SURFACE_CLEARANCE / radius)
     assert.ok(controls.close)
     assert.ok(camera.quaternion.angleTo(orbital) < 1e-7)
@@ -283,6 +283,57 @@ test('close cursor zoom keeps the pointed ground location fixed through zoom in 
       }
       close(camera.position.length() / radius, initialDistance / radius, 1e-7)
       controls.dispose()
+    }
+  }
+})
+
+test('edge zoom preserves the camera frame relative to the surface on every frame', () => {
+  for (const radius of [1, 4.26e-5, 1.16e-5]) {
+    for (const tilted of [false, true]) {
+      for (const [x, y] of [[40, 300], [760, 300], [400, 560], [80, 520]]) {
+        const s = setup(radius, 1.05)
+        if (tilted) drag(s.element, 2, [400, 300], [470, 180])
+        const point = new THREE.Vector2(x, y), anchor = s.controls.hit(point)
+        assert.ok(anchor)
+        const localNormal = () => s.camera.position.clone().sub(s.target).normalize()
+          .applyQuaternion(s.camera.quaternion.clone().invert())
+        const before = localNormal()
+        for (const delta of [-600, 600]) {
+          wheel(s.element, delta, x, y, false)
+          for (let frame = 0; frame < 120; frame++) {
+            s.controls.update(1 / 60)
+            close(localNormal().distanceTo(before), 0, 1e-8)
+            const p = anchor.clone().project(s.camera)
+            close(p.x, x / 400 - 1, 1e-7)
+            close(p.y, 1 - y / 300, 1e-7)
+          }
+        }
+        s.controls.dispose()
+      }
+    }
+  }
+})
+
+test('an off-center approach from orbit stays downward-facing through the entire transition', () => {
+  for (const radius of [1, 4.26e-5, 1.16e-5]) {
+    for (const distance of [5, 2, 1.6]) {
+      for (const x of [280, 520]) {
+        const s = setup(radius, distance)
+        assert.ok(s.controls.hit(new THREE.Vector2(x, 340)))
+        for (let step = 0; step < 40; step++) {
+          wheel(s.element, -1200, x, 340, false)
+          for (let frame = 0; frame < 90; frame++) {
+            s.controls.update(1 / 60)
+            const normal = s.camera.position.clone().sub(s.target).normalize()
+              .applyQuaternion(s.camera.quaternion.clone().invert())
+            close(normal.x, 0, 1e-8)
+            close(normal.y, 0, 1e-8)
+            close(normal.z, 1, 1e-8)
+          }
+        }
+        close(s.camera.position.length(), radius + SURFACE_CLEARANCE, 1e-9)
+        s.controls.dispose()
+      }
     }
   }
 })
@@ -446,6 +497,28 @@ function terrainSetup() {
   const groundRadius = position => 1 / position.clone().normalize().divide(scale).length()
   return { ...setup(1, 1.01, hitGround, groundRadius), groundRadius }
 }
+
+test('grazing edge zoom over sloped terrain retains its local orientation without jumps', () => {
+  const s = terrainSetup()
+  drag(s.element, 2, [400, 300], [464, -20])
+  const point = new THREE.Vector2(736, 480), anchor = s.controls.hit(point)
+  assert.ok(anchor)
+  const localNormal = () => s.camera.position.clone().normalize().applyQuaternion(s.camera.quaternion.clone().invert())
+  const normal = localNormal(), projected = anchor.clone().project(s.camera)
+  for (const delta of [-600, 600]) {
+    wheel(s.element, delta, point.x, point.y, false)
+    for (let frame = 0; frame < 120; frame++) {
+      const previous = s.camera.quaternion.clone()
+      s.controls.update(1 / 60)
+      close(localNormal().distanceTo(normal), 0, 1e-8)
+      assert.ok(previous.angleTo(s.camera.quaternion) < .05)
+      const p = anchor.clone().project(s.camera)
+      close(p.x, projected.x, 1e-6)
+      close(p.y, projected.y, 1e-6)
+    }
+  }
+  s.controls.dispose()
+})
 
 test('left ground dragging maintains terrain height and the grabbed point across changing elevation', () => {
   const s = terrainSetup(), anchor = s.controls.hit(new THREE.Vector2(400, 300))

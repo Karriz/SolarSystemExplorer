@@ -138,12 +138,21 @@ export class BodyCameraControls {
   getAzimuthalAngle() { return new THREE.Spherical().setFromVector3(this.camera.position.clone().sub(this.target)).theta }
 
   hit(point: THREE.Vector2): THREE.Vector3 | null {
+    const ray = this.screenRay(point)
+    return this.hitGround?.(ray) ?? ray.intersectSphere(new THREE.Sphere(this.target, this.body.radius), new THREE.Vector3())
+  }
+
+  private screenRay(point: THREE.Vector2) {
     const rect = this.element.getBoundingClientRect()
     const ndc = new THREE.Vector2((point.x - rect.left) / rect.width * 2 - 1, 1 - (point.y - rect.top) / rect.height * 2)
     this.camera.updateMatrixWorld()
     const ray = new THREE.Raycaster()
     ray.setFromCamera(ndc, this.camera)
-    return this.hitGround?.(ray.ray) ?? ray.ray.intersectSphere(new THREE.Sphere(this.target, this.body.radius), new THREE.Vector3())
+    return ray.ray
+  }
+
+  private hitAnchorSphere(point: THREE.Vector2, anchor: THREE.Vector3) {
+    return this.screenRay(point).intersectSphere(new THREE.Sphere(this.target, anchor.distanceTo(this.target)), new THREE.Vector3())
   }
 
   private viewCenter() {
@@ -215,18 +224,24 @@ export class BodyCameraControls {
     const weight = fixedPivot ? 1 : this.attachAllowed ? THREE.MathUtils.smootherstep(angularRadius / THREE.MathUtils.degToRad(this.camera.fov / 2), .75, 1) : 0
     const anchor = fixedPivot ?? (point && weight > 0 ? this.hit(point) : null)
     const radialPosition = this.target.clone().add(offset.setLength(distance))
-    if (anchor) {
-      const direction = this.camera.position.clone().sub(anchor).normalize()
-      const cursorPosition = anchor.clone().addScaledVector(direction, this.groundRange(anchor, direction, distance))
-      this.camera.position.copy(radialPosition).lerp(cursorPosition, weight)
+    if (fixedPivot) {
+      const direction = this.camera.position.clone().sub(fixedPivot).normalize()
+      this.camera.position.copy(fixedPivot).addScaledVector(direction, this.groundRange(fixedPivot, direction, distance))
       this.camera.position.sub(this.target).setLength(distance).add(this.target)
     } else this.camera.position.copy(radialPosition)
+    // At every altitude, change radius before rotating the whole frame to
+    // follow the cursor. Translating along the cursor ray during approach
+    // introduces a surface-relative tilt before ground controls take over.
     this.refreshClose(radius)
     this.refreshNavigation()
     this.camera.updateMatrixWorld()
-    // Orientation restoration in the orbital blend must also retain the
-    // pointed location. Rotating the whole frame preserves radial clearance.
-    const after = anchor && point ? this.hit(point) : null
+    // Rotating position, orientation and up together retains both the pointed
+    // location and the camera's direction relative to the local surface.
+    const surfaceZoom = !fixedPivot
+    // Use the acquired anchor's elevation while solving the rotation. A ray
+    // into newly visible terrain can hit a different hill; steering toward
+    // that hit repeatedly can send a grazing view away from its anchor.
+    const after = anchor && point ? surfaceZoom ? this.hitAnchorSphere(point, anchor) : this.hit(point) : null
     if (anchor && after) {
       const correction = new THREE.Quaternion().setFromUnitVectors(after.sub(this.target).normalize(), anchor.clone().sub(this.target).normalize())
       this.transform(new THREE.Quaternion().slerp(correction, weight))
@@ -234,14 +249,14 @@ export class BodyCameraControls {
     const height = Math.max(SURFACE_CLEARANCE, distance - surfaceRadius)
     this.keepHeight(height, fixedPivot ?? undefined)
     if (anchor && point && weight === 1 && !fixedPivot && this.groundRadius) {
-      this.reconcileGrab(height, anchor, point)
+      this.reconcileGrab(height, anchor, point, surfaceZoom)
     }
     if (this.drag) this.drag.grab = fixedPivot ?? this.hit(this.drag.button === 0 ? this.drag.point : this.viewCenter())
   }
 
-  private reconcileGrab(height: number, anchor: THREE.Vector3, point: THREE.Vector2) {
+  private reconcileGrab(height: number, anchor: THREE.Vector3, point: THREE.Vector2, anchorSphere = false) {
     for (let i = 0; i < 6; i++) {
-      const hit = this.hit(point)
+      const hit = anchorSphere ? this.hitAnchorSphere(point, anchor) : this.hit(point)
       if (!hit) break
       const correction = new THREE.Quaternion().setFromUnitVectors(hit.sub(this.target).normalize(), anchor.clone().sub(this.target).normalize())
       this.transform(correction)
