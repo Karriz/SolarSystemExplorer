@@ -1,0 +1,43 @@
+{
+  "source": "JPL Horizons, target 602, center 500@699, geometric J2000 FRAME vectors, KM-S, retrieved 2026-11-15",
+  "url": "https://ssd.jpl.nasa.gov/api/horizons.api",
+  "timeConvention": "Reference states use TDB; tests use the same Julian number as approximate UTC, consistent with the visual model.",
+  "samples": [
+    {
+      "date": "1900-01-01T12:00:00+00:00",
+      "julianDateTDB": 2415021.0,
+      "positionJ2000EquatorialKm": [
+        -12538.44752313363,
+        237447.0199809202,
+        -16435.96899365773
+      ]
+    },
+    {
+      "date": "2000-01-01T12:00:00+00:00",
+      "julianDateTDB": 2451545.0,
+      "positionJ2000EquatorialKm": [
+        161710.097341096,
+        -173141.6084562344,
+        -1182.80590898433
+      ]
+    },
+    {
+      "date": "2026-11-15T12:00:00+00:00",
+      "julianDateTDB": 2461360.0,
+      "positionJ2000EquatorialKm": [
+        229171.1067545473,
+        -58861.38613434762,
+        -15364.68320882892
+      ]
+    },
+    {
+      "date": "2049-12-31T12:00:00+00:00",
+      "julianDateTDB": 2469807.0,
+      "positionJ2000EquatorialKm": [
+        -111549.3448874895,
+        -209253.0041510872,
+        25009.24240518022
+      ]
+    }
+  ]
+}

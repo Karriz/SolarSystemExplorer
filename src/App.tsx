@@ -2,7 +2,7 @@ import { isGiantBody, giantPlanetProfiles } from './giantPlanetProfiles'
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { ArrowLeft, ChevronDown, Clock3, Compass, Focus, Info, Layers3, Pause, Play, RotateCcw, Search, X } from 'lucide-react'
 import { ExplorerScene, type ScreenMarker } from './ExplorerScene'
-import { bodyInfo, bodyOrder, positionAt, type BodyId } from './ephemeris'
+import { bodyInfo, bodyOrder, positionAt, satelliteParents, parentOf, type BodyId } from './ephemeris'
 import { atmosphereProfiles } from './atmosphereProfiles'
 import { textureSources } from './textureSources'
 import { surfaceTileSources, type TileBody } from './surfaceTiles'
@@ -21,11 +21,11 @@ const speedOptions = [0.1, 1, 10, 100]
 function distanceLabel(id: BodyId, date: Date): string {
   if (id === 'sun') return 'CENTER OF THE SOLAR SYSTEM'
   const p = positionAt(id, date)
-  const earth = positionAt('earth', date)
-  const d = id === 'moon'
-    ? Math.hypot(p.x - earth.x, p.y - earth.y, p.z - earth.z) * AU_KM
+  const parent = positionAt(parentOf(id), date)
+  const d = satelliteParents[id]
+    ? Math.hypot(p.x - parent.x, p.y - parent.y, p.z - parent.z) * AU_KM
     : Math.hypot(p.x, p.y, p.z)
-  return id === 'moon' ? `${Math.round(d).toLocaleString()} km FROM EARTH` : `${d.toFixed(3)} AU FROM SUN`
+  return satelliteParents[id] ? `${Math.round(d).toLocaleString()} km FROM ${bodyInfo[parentOf(id)].name.toUpperCase()}` : `${d.toFixed(3)} AU FROM SUN`
 }
 
 export default function App() {
@@ -49,6 +49,7 @@ export default function App() {
   const regionalStatus = regionalStatuses[selected as 'earth' | 'moon']
   const [surfaceColorStatuses, setSurfaceColorStatuses] = useState<Partial<Record<SolidSurfaceBody, SurfaceColorStatus>>>({})
   const surfaceProfile = isSolidSurfaceBody(selected) ? planetRenderProfiles[selected] : undefined
+  const terrainDescription = surfaceProfile && 'terrainDescription' in surfaceProfile ? surfaceProfile.terrainDescription : undefined
   const surfaceColorStatus = isSolidSurfaceBody(selected) ? surfaceColorStatuses[selected] : undefined
   const [terrainSettings, setTerrainSettings] = useState<Partial<Record<BodyId, { enabled: boolean; exaggeration: number; shadows: boolean }>>>({})
   const currentTerrainSettings = terrainSettings[selected] ?? { enabled: true, exaggeration: 1, shadows: true }
@@ -160,11 +161,11 @@ export default function App() {
           {query && <button aria-label="Clear search" onClick={() => setQuery('')}><X size={15} /></button>}
         </div>
         {searchOpen && query && <div className="search-results">{results.length ? results.map(id => <button key={id} onClick={() => choose(id)}><span className="body-dot" style={{ background: bodyInfo[id].color }} />{bodyInfo[id].name}<small>{bodyInfo[id].kind}</small></button>) : <div className="no-results">No matching body</div>}</div>}
-        <div className="nav-section-title">OUR SOLAR SYSTEM <span>10 OBJECTS</span></div>
+        <div className="nav-section-title">OUR SOLAR SYSTEM <span>{bodyOrder.length} OBJECTS</span></div>
         <div className="body-list">
-          {bodyOrder.map(id => <button key={id} className={`body-row ${selected === id ? 'active' : ''} ${id === 'moon' ? 'moon-row' : ''}`} onClick={() => choose(id)}>
+          {bodyOrder.map(id => <button key={id} className={`body-row ${selected === id ? 'active' : ''} ${satelliteParents[id] ? 'moon-row' : ''}`} onClick={() => choose(id)}>
             <span className={`body-icon icon-${id}`} style={{ '--body-color': bodyInfo[id].color } as React.CSSProperties} />
-            <span>{bodyInfo[id].name}<small>{id === 'sun' ? 'STAR' : id === 'moon' ? 'EARTH’S MOON' : bodyInfo[id].kind}</small></span>
+            <span>{bodyInfo[id].name}<small>{id === 'sun' ? 'STAR' : satelliteParents[id] ? `${bodyInfo[parentOf(id)].name.toUpperCase()}’S MOON` : bodyInfo[id].kind}</small></span>
             {selected === id && <span className="row-active-mark" />}
           </button>)}
         </div>
@@ -224,12 +225,12 @@ export default function App() {
             {selected === 'earth' && <button aria-pressed={terrainShadows} disabled={!terrainEnabled} onClick={() => { sceneRef.current?.setTerrainShadows(!terrainShadows, selected); setTerrainSetting({ shadows: !terrainShadows }) }}>Shadows {terrainShadows ? 'on' : 'off'}</button>}
             <label>Relief <select aria-label="Terrain relief" value={terrainExaggeration} disabled={!terrainEnabled} onChange={e => { const value = Number(e.target.value); sceneRef.current?.setTerrainExaggeration(value, selected); setTerrainSetting({ exaggeration: value }) }}><option value={1}>True scale</option><option value={4}>4× exaggerated</option></select></label>
           </div>}
-          {selected !== 'earth' && !regionalStatus?.ready && <div role="status" className="surface-source">{terrainStatus.state === 'ready' ? (terrainStatus.failedTiles ? 'Terrain on · some detail unavailable' : `Measured relief · ${terrainStatus.source && terrainStatus.source.resolution < 1000 ? `${Math.round(terrainStatus.source.resolution)} m` : `${((terrainStatus.source?.resolution ?? 0) / 1000).toFixed(1)} km`} source grid`) : terrainStatus.state === 'unavailable' ? 'Terrain unavailable · showing imagery' : terrainStatus.state === 'off' ? 'Terrain off · showing imagery' : terrainStatus.failedTiles ? 'Terrain unavailable · retrying' : 'Loading terrain…'}</div>}
+          {selected !== 'earth' && !regionalStatus?.ready && <div role="status" className="surface-source">{terrainStatus.state === 'ready' ? (terrainStatus.failedTiles ? 'Terrain on · some detail unavailable' : terrainDescription ?? `Measured relief · ${terrainStatus.source && terrainStatus.source.resolution < 1000 ? `${Math.round(terrainStatus.source.resolution)} m` : `${((terrainStatus.source?.resolution ?? 0) / 1000).toFixed(1)} km`} source grid`) : terrainStatus.state === 'unavailable' ? 'Terrain unavailable · showing imagery' : terrainStatus.state === 'off' ? 'Terrain off · showing imagery' : terrainStatus.failedTiles ? 'Terrain unavailable · retrying' : 'Loading terrain…'}</div>}
           {terrainStatus.source && !regionalStatus?.ready && <div className="surface-source">Elevation: <a href={terrainStatus.source.url} target="_blank" rel="noreferrer">{terrainStatus.source.credit}</a>{terrainStatus.source.licenseUrl && <> · <a href={terrainStatus.source.licenseUrl} target="_blank" rel="noreferrer">License</a></>}</div>}
           {terrainStatus.source?.gaps && <div className="surface-source">Elevation gaps use the reference sphere without measured relief.</div>}
           {terrainStatus.source?.approximate && <div className="surface-source">Heights above the Martian areoid, shown on a mean-radius sphere.</div>}
         </div>}
-        <div className="info-actions"><button onClick={() => { setShowIntroduction(false); sceneRef.current?.focus(selected) }}><Focus size={16} /> Focus view</button>{selected !== 'sun' && <button className="quiet" onClick={() => { const parent: BodyId = selected === 'moon' ? 'earth' : 'sun'; choose(parent) }}><ArrowLeft size={16} /> {selected === 'moon' ? 'Earth' : 'Sun'}</button>}</div>
+        <div className="info-actions"><button onClick={() => { setShowIntroduction(false); sceneRef.current?.focus(selected) }}><Focus size={16} /> Focus view</button>{selected !== 'sun' && <button className="quiet" onClick={() => { choose(parentOf(selected)) }}><ArrowLeft size={16} /> {bodyInfo[parentOf(selected)].name}</button>}</div>
       </section>}
       {!infoOpen && <button className="reopen-info" onClick={() => setInfoOpen(true)}><Info size={17} /> Show details</button>}
 
@@ -243,7 +244,7 @@ export default function App() {
           <label className="speed-select">SPEED <select aria-label="Simulation speed" value={speed} onChange={e => setSpeed(Number(e.target.value))}>{speedOptions.map(value => <option key={value} value={value}>{value} day{value === 1 ? '' : 's'}/sec</option>)}</select><ChevronDown size={14} /></label>
           <button className="now-button" onClick={resetNow}><RotateCcw size={15} /> Now</button>
         </div>
-        <div className="timeline-source">Planet positions: <a href="https://ssd.jpl.nasa.gov/planets/approx_pos.html" target="_blank" rel="noreferrer">JPL approximate elements</a> (1800–2050) · Moon: simplified orbit model · Sizes and distances use physical scale</div>
+        <div className="timeline-source">Planet positions: <a href="https://ssd.jpl.nasa.gov/planets/approx_pos.html" target="_blank" rel="noreferrer">JPL approximate elements</a> (1800–2050) · Moons: simplified parent-relative orbit models · Sizes and distances use physical scale</div>
       </footer>
     </main>
   )

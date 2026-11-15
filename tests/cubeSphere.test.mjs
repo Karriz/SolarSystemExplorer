@@ -74,7 +74,7 @@ test('cross-face mixed LOD stitching follows the coarser physical edge and its s
   patches.forEach(p=>p.geometry.dispose())
 })
 
-const contracts={moon:{radius:1737400,scale:.5,frame:'MEAN EARTH/POLAR AXIS OF DE421'},mars:{radius:3389500,scale:1,frame:'IAU2000'},venus:{radius:6051000,scale:1,frame:'Magellan body-fixed'},mercury:{radius:2439400,scale:.5,frame:'MESSENGER MDIS body-fixed'}}
+const contracts={europa:{radius:1560800,scale:1,frame:'IAU_EUROPA / USGS controlled 2021'},io:{radius:1821600,scale:1,frame:'IAU_IO / White 2014'},enceladus:{radius:252100,scale:1,frame:'IAU_ENCELADUS / Schenk 2024'},moon:{radius:1737400,scale:.5,frame:'MEAN EARTH/POLAR AXIS OF DE421'},mars:{radius:3389500,scale:1,frame:'IAU2000'},venus:{radius:6051000,scale:1,frame:'Magellan body-fixed'},mercury:{radius:2439400,scale:.5,frame:'MESSENGER MDIS body-fixed'}}
 const fixture=(body='moon',maxZoom=1,sampleSize=65)=>{
   const tiles={};for(let z=0;z<=maxZoom;z++)for(let x=0;x<2**(z+1);x++)for(let y=0;y<2**z;y++)tiles[`${z}/${x}/${y}`]={min:100,max:200,error:500,bytes:2,sha256:'a'.repeat(64)}
   return {schema:body==='moon'?1:2,body,version:'cube-test',grid:'geographic-2x1',sampleSize,maxZoom,encoding:'gzip-int16-le',
@@ -122,7 +122,7 @@ test('dense height cache makes room for geometry and metadata without losing wan
   assert.ok(source.metrics().cached<wanted.size)
 })
 
-for(const bodyId of ['moon','mars','mercury','venus'])test(`${bodyId} cube terrain loads six complete roots, remains stationary, and releases on departure`,async t=>{
+for(const bodyId of ['moon','mars','mercury','venus','enceladus','io','europa'])test(`${bodyId} cube terrain loads six complete roots, remains stationary, and releases on departure`,async t=>{
   installFetch(t,bodyId)
   const body=new THREE.Mesh(cubeSphereGeometry(1),new THREE.MeshStandardMaterial()),statuses=[]
   const layer=new CubeTerrainLayer(body,s=>statuses.push(s),'https://example.test/',bodyId==='moon'?surfaceState():undefined,{value:1},bodyId)

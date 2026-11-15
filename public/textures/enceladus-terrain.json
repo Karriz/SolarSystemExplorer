@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "body": "enceladus",
+  "sourceSha256": {
+    "dem.tif": "7c08c46238cde6528c9143f0c667d42cd3bc6ac60c572595a7e6cad2d6775f91",
+    "mosaic.tif": "1738c5cf8e856c7ae262d858261af0fbb32503a68a524884d36194afb23afcc5",
+    "color.jpg": "5b60d0161efd659f6d95281559ad4b30826fd02ee72944dbb3f8b7679f65ed4d"
+  },
+  "referenceRadiusMeters": 252100,
+  "referenceEllipsoidMeters": [
+    256200,
+    251400,
+    248600
+  ],
+  "sourceHeightUnits": "kilometers",
+  "preparedHeightUnits": "meters",
+  "heightConversion": "radial ellipsoid residual * 1000 + ellipsoid radius(direction) - 252100",
+  "sourceSupportedFraction": 1.0,
+  "coverageMeaning": "Valid published stereo/shape-model coverage, not a per-pixel direct-measurement confidence map",
+  "gapFill": "bounded adjacent interpolation of residual only; measured samples unchanged",
+  "minHeightMeters": -4623.56591796875,
+  "maxHeightMeters": 5657.73291015625,
+  "preparedSha256": "14a06f20667044bce799c35dbc2a3a6826feca636681e3c87b28e74d1ff6a1ca",
+  "width": 8192,
+  "height": 4096,
+  "sourceUrl": "https://astrogeology.usgs.gov/search/map/enceladus-cassini-global-dem-200m-schenk"
+}

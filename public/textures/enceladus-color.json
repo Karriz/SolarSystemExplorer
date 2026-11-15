@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "body": "enceladus",
+  "width": 4096,
+  "height": 2048,
+  "source": "Cassini monochrome geography; inferred near-neutral visible ice with 2% composite-derived chroma",
+  "sourceSha256": {
+    "dem.tif": "7c08c46238cde6528c9143f0c667d42cd3bc6ac60c572595a7e6cad2d6775f91",
+    "mosaic.tif": "1738c5cf8e856c7ae262d858261af0fbb32503a68a524884d36194afb23afcc5",
+    "color.jpg": "5b60d0161efd659f6d95281559ad4b30826fd02ee72944dbb3f8b7679f65ed4d"
+  },
+  "longitude": "east-positive-minus180-to180",
+  "limitations": "Reconstructed visible appearance, not calibrated global RGB. PIA18435 includes UV/IR. Monochrome image shading is compressed, not fully removed. No height inferred from brightness.",
+  "linearLuminanceRange": [
+    0.6457396149635315,
+    0.8344525694847107
+  ],
+  "deliveredSha256": "e545372d2fb163fe6b2fd5da68bb53d8a4a40264b538cb2d81a921fa607a95ad",
+  "bytes": 2685044
+}

@@ -56,6 +56,9 @@ class Raster:
         else:
             path = cache / source["file"]
             if not path.exists():
+                if source['url'].startswith('offline-prepared:'):
+                    recipe = source['url'].split(':', 1)[1]
+                    raise ValueError(f"Missing prepared source: {path}; run sh scripts/terrain-python.sh scripts/{recipe}")
                 if offline:
                     raise ValueError(f"Missing cached source: {path}")
                 print(f"Downloading {source['url']}", flush=True)
@@ -220,8 +223,10 @@ def build_column(job):
 
 def build(body, source, args):
     source_cache = args.cache
-    if source.get("cacheSubdirectory") and source.get("files") and not (source_cache / source["files"][0]["file"]).exists():
-        source_cache = source_cache / source["cacheSubdirectory"]
+    if source.get("cacheSubdirectory"):
+        relative_cache = source_cache / source["cacheSubdirectory"]
+        if relative_cache.exists():
+            source_cache = relative_cache
     raster = Raster(source, source_cache, args.offline)
     size = source.get("sampleSize", SIZE)
     cells = size - 1

@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { rayEllipsoidInterval } from './atmosphereMath'
 import { giantBodies, giantPlanetProfiles, giantBoundaryRadius, isGiantBody, AU_KM } from './giantPlanetProfiles'
-import { bodyInfo, bodyOrder, orbitPathAt, planetOrder, positionAt, radiusAu, type BodyId } from './ephemeris'
+import { bodyInfo, bodyOrder, orbitPathAt, planetOrder, positionAt, radiusAu, satelliteOrder, satelliteParents, satellitePeriods, parentOf, type BodyId } from './ephemeris'
 import { textureSources } from './textureSources'
 import { orientationAt } from './orientation'
 import { constrainCamera, SURFACE_CLEARANCE } from './cameraSafety'
@@ -11,7 +11,7 @@ import { GlobeTerrainLayer, type TerrainStatus } from './GlobeTerrainLayer'
 import { CubeTerrainLayer } from './CubeTerrainLayer'
 import { cubeSphereGeometry } from './cubeSphere'
 import { PlanetSurfaceRenderer, type SurfaceColorStatus } from './PlanetSurfaceRenderer'
-import { isSolidSurfaceBody, solidSurfaceBodies, type SolidSurfaceBody } from './planetRenderProfiles'
+import { isSolidSurfaceBody, solidSurfaceBodies, planetRenderProfiles, type SolidSurfaceProfile, type SolidSurfaceBody } from './planetRenderProfiles'
 import { terrainBodies, type TerrainBody } from './terrain'
 import { RegionalTerrainLayer, type RegionalMetrics } from './RegionalTerrainLayer'
 import { EarthSurfaceRenderer } from './EarthSurfaceRenderer'
@@ -106,7 +106,7 @@ export class ExplorerScene {
   private container: HTMLElement
   private sunLight: THREE.PointLight
   private terrainSun = new THREE.DirectionalLight('#fff0d0', 0)
-  private moonOrbit: THREE.LineLoop | null = null
+  private satelliteOrbits = new Map<BodyId, THREE.LineLoop>()
   private moonOrbitDate = 0
   private planetOrbits = new Map<BodyId, THREE.LineLoop>()
   private planetOrbitDate = 0
@@ -118,7 +118,7 @@ export class ExplorerScene {
   private disposed = false
   private surfaceTiles: GlobeTileLayer
   private terrain = new Map<TerrainBody, GlobeTerrainLayer | CubeTerrainLayer>()
-  private surfaces = { earth: surfaceState(), moon: surfaceState(), mars: surfaceState(), mercury: surfaceState(), venus: surfaceState() }
+  private surfaces = { earth: surfaceState(), moon: surfaceState(), mars: surfaceState(), mercury: surfaceState(), venus: surfaceState(), enceladus: surfaceState(), io: surfaceState(), europa: surfaceState() }
   private regional = new Map<'earth' | 'moon', RegionalTerrainLayer>()
   private pilotMetricsKey = ''
   private onPilotStatus?: (body: 'earth' | 'moon', metrics: RegionalMetrics) => void
@@ -210,6 +210,19 @@ export class ExplorerScene {
     for (const id of bodyOrder) {
       const radius = radiusAu(id)
       const geometry = isSolidSurfaceBody(id)?cubeSphereGeometry(radius):new THREE.SphereGeometry(radius, id === 'sun' ? 96 : 128, 96)
+      const profile: SolidSurfaceProfile | undefined = isSolidSurfaceBody(id) ? planetRenderProfiles[id] : undefined
+      if (profile?.referenceAxesMeters) {
+        const axes = profile.referenceAxesMeters, position = geometry.getAttribute('position'), normal = geometry.getAttribute('normal'), d = new THREE.Vector3()
+        for (let i = 0; i < position.count; i++) {
+          d.fromBufferAttribute(position, i).normalize()
+          const radial = 1 / Math.hypot(d.x / axes[0], d.y / axes[1], d.z / axes[2])
+          d.multiplyScalar(radial / 149_597_870_700)
+          position.setXYZ(i, d.x, d.y, d.z)
+          d.set(d.x / axes[0] ** 2, d.y / axes[1] ** 2, d.z / axes[2] ** 2).normalize()
+          normal.setXYZ(i, d.x, d.y, d.z)
+        }
+        geometry.computeBoundingSphere(); geometry.computeBoundingBox()
+      }
       const material = id === 'sun' || isGiantBody(id)
         ? new THREE.MeshBasicMaterial({ color: '#ffda87' })
         : new THREE.MeshStandardMaterial({ map: makeTexture(id), roughness: 1, metalness: 0 })
@@ -281,23 +294,27 @@ export class ExplorerScene {
       this.planetOrbits.set(id, orbit)
     }
     this.planetOrbitDate = this.date.getTime()
-    const moonOrbit = new THREE.LineLoop(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: '#b1b9c0', transparent: true, opacity: .5 }))
-    moonOrbit.userData.moonOrbit = true
-    this.scene.add(moonOrbit)
-    this.orbits.push(moonOrbit)
-    this.moonOrbit = moonOrbit
+    for (const id of satelliteOrder) {
+      const orbit = new THREE.LineLoop(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: '#b1b9c0', transparent: true, opacity: .5, depthWrite: false }))
+      orbit.userData.parent = parentOf(id)
+      this.scene.add(orbit)
+      this.orbits.push(orbit)
+      this.satelliteOrbits.set(id, orbit)
+    }
     this.updateMoonOrbit()
   }
 
   private updateMoonOrbit() {
-    if (!this.moonOrbit || Math.abs(this.date.getTime() - this.moonOrbitDate) < DAY_MS / 2) return
-    const points: THREE.Vector3[] = []
-    for (let i = 0; i < 128; i++) {
-      const sampleDate = new Date(this.date.getTime() + i / 128 * 27.321661 * DAY_MS)
-      points.push(vector('moon', sampleDate).sub(vector('earth', sampleDate)))
+    if (this.moonOrbitDate && Math.abs(this.date.getTime() - this.moonOrbitDate) < DAY_MS / 2) return
+    for (const [id, orbit] of this.satelliteOrbits) {
+      const points: THREE.Vector3[] = []
+      for (let i = 0; i < 128; i++) {
+        const sampleDate = new Date(this.date.getTime() + i / 128 * satellitePeriods[id]! * DAY_MS)
+        points.push(vector(id, sampleDate).sub(vector(parentOf(id), sampleDate)))
+      }
+      orbit.geometry.dispose()
+      orbit.geometry = new THREE.BufferGeometry().setFromPoints(points)
     }
-    this.moonOrbit.geometry.dispose()
-    this.moonOrbit.geometry = new THREE.BufferGeometry().setFromPoints(points)
     this.moonOrbitDate = this.date.getTime()
   }
 
@@ -374,7 +391,7 @@ export class ExplorerScene {
     this.selected = id
     this.origin.copy(vector(id, this.date))
     this.focusDirection = null
-    if (id === 'earth' || isGiantBody(id)) {
+    if (id === 'earth' || id === 'enceladus' || id === 'io' || id === 'europa' || isGiantBody(id)) {
       // Show the illuminated hemisphere and terminator on initial focus.
       const towardSun = vector('sun', this.date).sub(vector(id, this.date)).normalize()
       const current = this.camera.position.clone().sub(this.controls.target).normalize()
@@ -383,7 +400,7 @@ export class ExplorerScene {
       this.focusDirection = tangent.normalize().multiplyScalar(Math.sqrt(1 - .3 * .3)).addScaledVector(towardSun, .3)
     }
     const r = radiusAu(id)
-    this.focusDistance = id === 'sun' ? .05 : id === 'moon' ? .00012 : Math.max(r * 9, .000085)
+    this.focusDistance = id === 'sun' ? .05 : satelliteParents[id] ? r * 7 : Math.max(r * 9, .000085)
   }
 
   overview() {
@@ -427,7 +444,7 @@ export class ExplorerScene {
       mesh.position.copy(vector(id, this.date)).sub(this.origin)
     }
     for (const orbit of this.orbits) {
-      orbit.position.copy(orbit.userData.moonOrbit ? vector('earth', this.date) : new THREE.Vector3()).sub(this.origin)
+      orbit.position.copy(orbit.userData.parent ? vector(orbit.userData.parent, this.date) : new THREE.Vector3()).sub(this.origin)
     }
     this.sunLight.position.copy(this.bodies.get('sun')!.position)
     if (this.focusDistance !== null) {
@@ -528,11 +545,13 @@ export class ExplorerScene {
       const closeSelected = id === this.selected && projectedRadius > 12
       return { id, x: (projected.x * .5 + .5) * width, y: (-projected.y * .5 + .5) * height, visible: !closeSelected && projected.z > -1 && projected.z < 1 && projected.x > -1.2 && projected.x < 1.2 && projected.y > -1.2 && projected.y < 1.2 }
     })
-    const earthMarker = markers.find(marker => marker.id === 'earth')!
-    const moonMarker = markers.find(marker => marker.id === 'moon')!
-    const moonSeparation = Math.hypot(moonMarker.x - earthMarker.x, moonMarker.y - earthMarker.y)
-    const earthDistance = this.camera.position.distanceTo(this.bodies.get('earth')!.position)
-    moonMarker.visible &&= this.selected === 'moon' || (earthDistance < 0.08 && moonSeparation >= 28)
+    for (const id of satelliteOrder) {
+      const parent = parentOf(id), parentMarker = markers.find(marker => marker.id === parent)!
+      const marker = markers.find(marker => marker.id === id)!
+      const separation = Math.hypot(marker.x - parentMarker.x, marker.y - parentMarker.y)
+      const distance = this.camera.position.distanceTo(this.bodies.get(parent)!.position)
+      marker.visible &&= this.selected === id || (distance < (parent === 'earth' ? .08 : .025) && separation >= 28)
+    }
     this.onMarkers(markers)
   }
 

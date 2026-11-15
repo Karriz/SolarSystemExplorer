@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "body": "europa",
+  "width": 4096,
+  "height": 2048,
+  "source": "USGS global and controlled Galileo monochrome imagery with inferred visible ice/non-ice color",
+  "naturalColorReference": "NASA/JPL/DLR PIA00502 left natural-color hemisphere; appearance constraint, not a georeferenced global RGB source",
+  "colorModel": "Near-neutral ice and restrained brown endmember on dark image features; local contrast moderates chroma. Inferred chroma, no geologic unit-color painting",
+  "whiteReference": 1.0944607257843018,
+  "controlledImagery": [
+    "ortho-12ESPWYCOL01_GalileoSSI_Equi.tif",
+    "ortho-12ESWEDGE_01_GalileoSSI_Equi.tif",
+    "ortho-15ESCILIXS01_GalileoSSI_Equi.tif",
+    "ortho-17ESAGENOR03_GalileoSSI_Equi_1.tif",
+    "ortho-19ESRHADAM01_GalileoSSI_Equi.tif"
+  ],
+  "limitations": "No measured global RGB. Source illumination remains partly baked. Image brightness constrains inferred appearance, not measured material identification. Regional/global control networks differ. Polar color is inferred.",
+  "deliveredSha256": "915aa584f9ad39a9dfcbfe03e8f8109ca0ce20e4c966ca2624be3d83771db39c",
+  "bytes": 7250484
+}

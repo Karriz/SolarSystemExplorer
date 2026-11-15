@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "body": "io",
+  "width": 4096,
+  "height": 2048,
+  "source": "USGS Galileo global color merge; reconstructed visible RGB",
+  "sourceSha256": "524dcabd247c889a4e7c2a1bfd9e5fcc545c6a039b2c765da9b741befdfd00bd",
+  "red": "G + (IR756-G)*(671-559)/(756-559)",
+  "blue": ".55*G559 + .45*V404",
+  "commonLinearScale": 0.8,
+  "limitations": "Approximate visible spectral reconstruction, not measured RGB. Source is an empirically processed multispectral mosaic, with variable spatial resolution and retained image illumination. Polar gaps use neighboring color; colors above 85 degrees blend smoothly to one pole mean.",
+  "polarBlendLatitudeDegrees": 85,
+  "longitude": "east-positive-minus180-to180",
+  "deliveredSha256": "cf91bf07f3ff49b0beff26eba7ad7dd8c9090a0e85539511f9c3f875f118f815",
+  "bytes": 4116236,
+  "controlSamples": [
+    {
+      "lat": -18.71,
+      "lon": 104.72,
+      "srgb": [
+        108,
+        105,
+        101
+      ]
+    },
+    {
+      "lat": -9.88,
+      "lon": 88.83,
+      "srgb": [
+        206,
+        194,
+        175
+      ]
+    },
+    {
+      "lat": 18.4,
+      "lon": -58.5,
+      "srgb": [
+        197,
+        189,
+        176
+      ]
+    },
+    {
+      "lat": 55,
+      "lon": -130,
+      "srgb": [
+        196,
+        183,
+        169
+      ]
+    }
+  ]
+}

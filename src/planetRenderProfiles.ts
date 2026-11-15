@@ -1,5 +1,5 @@
 import type { BodyId } from './ephemeris'
-import { MARS_DETAIL_PROFILE, MOON_DETAIL_PROFILE, MERCURY_DETAIL_PROFILE, VENUS_DETAIL_PROFILE, type SurfaceDetailProfile } from './planetSurfaceMaterial.ts'
+import { MARS_DETAIL_PROFILE, MOON_DETAIL_PROFILE, MERCURY_DETAIL_PROFILE, VENUS_DETAIL_PROFILE, ENCELADUS_DETAIL_PROFILE, IO_DETAIL_PROFILE, EUROPA_DETAIL_PROFILE, type SurfaceDetailProfile } from './planetSurfaceMaterial.ts'
 
 export type SolidSurfaceProfile = {
   id: BodyId
@@ -12,9 +12,38 @@ export type SolidSurfaceProfile = {
   generatedDetail: boolean
   colorDescription: string
   colorSource: { url: string; label: string; credit: string }
+  /** Reference figure in body-local X, north Y, west Z order. */
+  referenceAxesMeters?: readonly [number, number, number]
+  terrainDescription?: string
 }
 
 export const planetRenderProfiles = {
+  europa: {
+    id: 'europa', generatedDetail: true, originalColorWidth: 4096,
+    detail: EUROPA_DETAIL_PROFILE, cubeColorSampling: true,
+    referenceAxesMeters: [1562600, 1559500, 1560300],
+    fallbackColor: { file: 'europa-color-reference.png', message: 'Compact color unavailable · showing reconstructed Europa reference' },
+    colorSource: { url: 'https://doi.org/10.3133/sim3513', label: 'Voyager/Galileo-informed visible ice reconstruction', credit: 'NASA / USGS; inferred visible color' },
+    colorDescription: 'Observed image geography with inferred visible ice and non-ice colors. Five regional stereo sites retain local relief; the global surface and ridge heights are reconstructed. Fine ice detail is generated.',
+    terrainDescription: 'Regional stereo relief and reconstructed global ice terrain',
+  },
+  io: {
+    id: 'io', generatedDetail: true, originalColorWidth: 4096,
+    detail: IO_DETAIL_PROFILE, cubeColorSampling: true,
+    referenceAxesMeters: [1829700, 1815800, 1819200],
+    fallbackColor: { file: 'io-color-reference.png', message: 'Compact color unavailable · showing reconstructed Io reference' },
+    colorSource: { url: 'https://astrogeology.usgs.gov/search/map/io_galileo_ssi_global_color_merge_mosaic_1km', label: 'Galileo-informed visible color reconstruction', credit: 'NASA / JPL / USGS; reconstructed visible RGB' },
+    colorDescription: 'Visible-color approximation from Galileo bands; polar colors are inferred. Stereo terrain is completed with reconstructed volcanic plains. Nearby rock detail is illustrative.',
+    terrainDescription: 'Stereo relief and reconstructed gaps · 1 km source grid',
+  },
+  enceladus: {
+    id: 'enceladus', generatedDetail: true, originalColorWidth: 4096,
+    detail: ENCELADUS_DETAIL_PROFILE, cubeColorSampling: true,
+    referenceAxesMeters: [256200, 248600, 251400],
+    fallbackColor: { file: 'enceladus-color-reference.png', message: 'Compact color unavailable · showing reconstructed ice reference' },
+    colorSource: { url: 'https://science.nasa.gov/photojournal/color-maps-of-enceladus-2014/', label: 'Cassini-informed visible ice reconstruction', credit: 'NASA / JPL-Caltech / SSI / LPI; reconstructed visible color' },
+    colorDescription: 'Cassini geography with inferred subtle visible ice color, not calibrated global RGB. Measured Schenk/McKinnon relief includes the reference ellipsoid; missing coverage is reconstructed. Fine ice detail is generated.',
+  },
   moon: {
     id: 'moon', generatedDetail: true, originalColorWidth: 8192, detail: MOON_DETAIL_PROFILE, cubeColorSampling: false,
     colorSource: { url: 'https://svs.gsfc.nasa.gov/4720/', label: 'CGI Moon Kit color map', credit: 'NASA SVS / LRO' },

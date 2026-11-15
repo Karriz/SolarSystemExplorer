@@ -1,4 +1,5 @@
 import './cameraSafety.test.mjs'
+import './satellites.test.mjs'
 import './surfaceTiles.test.mjs'
 import './cameraOrbit.test.mjs'
 import './terrain.test.mjs'

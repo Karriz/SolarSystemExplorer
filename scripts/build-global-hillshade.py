@@ -90,10 +90,11 @@ def main():
     for body in args.bodies:
         start=time.perf_counter();source=terrain.SOURCES[body]
         legacy_widths={'moon':11264,'mars':22016}
-        spacing=max(1000,source['sourceResolutionMeters'])
+        spacing=max(source.get('hillshadeResolutionMeters',1000),source['sourceResolutionMeters'])
         w=legacy_widths.get(body,math.ceil(2*math.pi*source['referenceRadiusMeters']/spacing/64)*64);h=w//2
         parameters={**PARAMETERS,'derivativeMeters':max(300,source['sourceResolutionMeters'])}
-        version='global-1km-v1-'+hashlib.sha256(json.dumps([source['sha256'],parameters,w],sort_keys=True).encode()).hexdigest()[:12]
+        prefix=f'global-{spacing}m-v1-' if 'hillshadeResolutionMeters' in source else 'global-1km-v1-'
+        version=prefix+hashlib.sha256(json.dumps([source['sha256'],parameters,w],sort_keys=True).encode()).hexdigest()[:12]
         stage=ROOT/'.terrain-cache/hillshade-build'/body/version;stage.mkdir(parents=True,exist_ok=True)
         fine_path=stage/'fine.npy'
         fine=np.lib.format.open_memmap(fine_path,mode='r+' if fine_path.exists() else 'w+',dtype='uint8',shape=(h,w))

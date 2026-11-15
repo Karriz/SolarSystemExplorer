@@ -1,11 +1,14 @@
 """Validate every delivered R8 page, shared gutters, and pyramid samples."""
-import gzip,hashlib,json
+import argparse,gzip,hashlib,json
 from pathlib import Path
 import numpy as np
 
 root=Path('public/hillshade');catalog=json.loads((root/'catalog.json').read_text())
+parser=argparse.ArgumentParser();parser.add_argument('--bodies',nargs='+',choices=list(catalog['bodies']))
+args=parser.parse_args()
 reports=[]
 for body,relative in catalog['bodies'].items():
+    if args.bodies and body not in args.bodies:continue
     directory=(root/relative).parent;m=json.loads((root/relative).read_text());pages={};total=0;max_seam=0
     for key,entry in m['tiles'].items():
         file=directory/f'{key}.bin.gz';payload=file.read_bytes();raw=gzip.decompress(payload)

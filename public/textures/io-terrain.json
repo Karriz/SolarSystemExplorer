@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "body": "io",
+  "referenceRadiusMeters": 1821600,
+  "referenceEllipsoidMeters": [
+    1829700,
+    1819200,
+    1815800
+  ],
+  "datumApproximation": "Thomas et al. 1998 equilibrium figure; exact updated limb figure not supplied by Trek",
+  "sourceHeightUnits": "meters",
+  "sourceSupportedFraction": 0.5382618545831422,
+  "gapFill": "Constrained neighboring relief plus seeded volcanic-plains waves; measured resampled pixels preserved exactly",
+  "proceduralWaveAmplitudesMeters": [
+    140,
+    65,
+    25,
+    8
+  ],
+  "seed": 501,
+  "sourceFiles": [
+    {
+      "file": "dem.tif",
+      "url": "https://trek.nasa.gov/io/TrekWS/rest/cat/data/stream?label=IoDEM",
+      "bytes": 265587956,
+      "sha256": "9b9159c64337c32ba203fad629ed0d1d344a8482546e277c3b984c01b417d61d"
+    },
+    {
+      "file": "color.tif",
+      "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Io_Galileo_SSI_Global_Mosaic_ClrMerge_1km.tif",
+      "bytes": 196637696,
+      "sha256": "524dcabd247c889a4e7c2a1bfd9e5fcc545c6a039b2c765da9b741befdfd00bd"
+    },
+    {
+      "file": "color.lbl",
+      "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Io_Galileo_SSI_Global_Mosaic_ClrMerge_1km_pds3.lbl",
+      "bytes": 2134,
+      "sha256": "47a4b493743672efed5c4a634daa631e45379fe9110b4b6d350dc751d02b52e3"
+    }
+  ],
+  "minHeightMeters": -7941.35009765625,
+  "maxHeightMeters": 14441.22265625,
+  "preparedSha256": "8ebb0d87cfba8533c440e18b127f827d09bc5d12cdc9d2b97a25cab861f0a60e",
+  "width": 16384,
+  "height": 8192
+}

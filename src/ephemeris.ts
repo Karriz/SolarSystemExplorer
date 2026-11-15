@@ -1,6 +1,6 @@
 // JPL approximate planetary elements, valid 1800–2050. Units: AU and degrees.
 // Source: https://ssd.jpl.nasa.gov/planets/approx_pos.html
-export type BodyId = 'sun' | 'mercury' | 'venus' | 'earth' | 'moon' | 'mars' | 'jupiter' | 'saturn' | 'uranus' | 'neptune'
+export type BodyId = 'sun' | 'mercury' | 'venus' | 'earth' | 'moon' | 'mars' | 'jupiter' | 'io' | 'europa' | 'saturn' | 'enceladus' | 'uranus' | 'neptune'
 export type Vec3 = { x: number; y: number; z: number }
 type Elements = { base: number[]; rate: number[] }
 
@@ -14,13 +14,20 @@ export const bodyInfo: Record<BodyId, { name: string; kind: string; radiusKm: nu
   moon: { name: 'Moon', kind: 'NATURAL SATELLITE', radiusKm: 1737.4, color: '#bdbbb6', description: 'Earth’s natural satellite and the first world humans visited.' },
   mars: { name: 'Mars', kind: 'TERRESTRIAL PLANET', radiusKm: 3389.5, color: '#dc8063', description: 'The red planet, home to giant volcanoes and ancient riverbeds.' },
   jupiter: { name: 'Jupiter', kind: 'GAS GIANT', radiusKm: 69911, color: '#d5a886', description: 'The largest planet in the Solar System.' },
+  io: { name: 'Io', kind: 'NATURAL SATELLITE', radiusKm: 1821.6, color: '#d9c28f', description: 'Jupiter’s volcanic moon, with sulfur-rich plains, dark lava flows and isolated mountains.' },
+  europa: { name: 'Europa', kind: 'NATURAL SATELLITE', radiusKm: 1560.8, color: '#d4d0bb', description: 'Jupiter’s icy moon, crossed by long ridges and bands above a hidden ocean.' },
   saturn: { name: 'Saturn', kind: 'GAS GIANT', radiusKm: 58232, color: '#dec99d', description: 'A gas giant known for its broad ring system.' },
+  enceladus: { name: 'Enceladus', kind: 'NATURAL SATELLITE', radiusKm: 252.1, color: '#e5e9eb', description: 'Saturn’s bright icy moon, with fractured terrain and an active south polar region.' },
   uranus: { name: 'Uranus', kind: 'ICE GIANT', radiusKm: 25362, color: '#a7d8df', description: 'An ice giant with an extreme axial tilt.' },
   neptune: { name: 'Neptune', kind: 'ICE GIANT', radiusKm: 24622, color: '#7095d7', description: 'A distant ice giant with fast-moving winds.' },
 }
 
-export const bodyOrder: BodyId[] = ['sun', 'mercury', 'venus', 'earth', 'moon', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune']
-export const planetOrder: BodyId[] = bodyOrder.filter(id => id !== 'sun' && id !== 'moon')
+export const bodyOrder: BodyId[] = ['sun', 'mercury', 'venus', 'earth', 'moon', 'mars', 'jupiter', 'io', 'europa', 'saturn', 'enceladus', 'uranus', 'neptune']
+export const satelliteParents: Partial<Record<BodyId, BodyId>> = { moon: 'earth', io: 'jupiter', europa: 'jupiter', enceladus: 'saturn' }
+export const satellitePeriods: Partial<Record<BodyId, number>> = { moon: 27.321661, io: 360 / 203.4889538, europa: 360 / 101.3747235, enceladus: 360 / 262.7318996 }
+export const satelliteOrder = bodyOrder.filter(id => satelliteParents[id])
+export const parentOf = (id: BodyId): BodyId => satelliteParents[id] ?? 'sun'
+export const planetOrder: BodyId[] = bodyOrder.filter(id => id !== 'sun' && !satelliteParents[id])
 
 // Columns: semimajor axis, eccentricity, inclination, mean longitude,
 // longitude of perihelion, longitude of ascending node.
@@ -89,5 +96,46 @@ export function positionAt(id: BodyId, date: Date): Vec3 {
     const offset = moonOffset(date)
     return { x: earth.x + offset.x, y: earth.y + offset.y, z: earth.z + offset.z }
   }
+  if (id === 'enceladus' || id === 'io' || id === 'europa') {
+    const parent = planetPosition(parentOf(id), date)
+    const offset = meanSatelliteOffset(id, date)
+    return { x: parent.x + offset.x, y: parent.y + offset.y, z: parent.z + offset.z }
+  }
   return planetPosition(id, date)
+}
+
+/** Mean circular Saturn-relative orbit, independently phase-anchored to JPL
+ * Horizons at J2000. Eccentricity, inclination and physical libration are
+ * omitted. This visual model is not an eclipse-prediction ephemeris. */
+export function enceladusOffset(date: Date): Vec3 {
+  return meanSatelliteOffset('enceladus', date)
+}
+
+export function ioOffset(date: Date): Vec3 {
+  return meanSatelliteOffset('io', date)
+}
+
+export function europaOffset(date: Date): Vec3 {
+  return meanSatelliteOffset('europa', date)
+}
+
+const meanSatelliteOrbits = {
+  enceladus: { radiusKm: 238037, phase: 2.4017741738546037, rate: 262.7318996, ra: [40.66, -.036], dec: [83.52, -.004] },
+  europa: { radiusKm: 671100, phase: 34.15058196604563, rate: 101.3747235, ra: [268.08, -.009], dec: [64.51, .003] },
+  io: { radiusKm: 421700, phase: -160.28193631371676, rate: 203.4889538, ra: [268.05, -.009], dec: [64.50, .003] },
+} as const
+
+function meanSatelliteOffset(id: keyof typeof meanSatelliteOrbits, date: Date): Vec3 {
+  const orbit = meanSatelliteOrbits[id]
+  const d = julianDate(date) - 2451545, t = d / 36525
+  const ra = (orbit.ra[0] + orbit.ra[1] * t) * DEG, dec = (orbit.dec[0] + orbit.dec[1] * t) * DEG
+  const w = ((orbit.phase + orbit.rate * d) % 360) * DEG
+  const node = { x: -Math.sin(ra), y: Math.cos(ra), z: 0 }
+  const pole = { x: Math.cos(dec) * Math.cos(ra), y: Math.cos(dec) * Math.sin(ra), z: Math.sin(dec) }
+  // Rodrigues rotation of the equatorial ascending-node vector about the pole.
+  const x = node.x * Math.cos(w) - pole.z * node.y * Math.sin(w)
+  const y = node.y * Math.cos(w) + pole.z * node.x * Math.sin(w)
+  const z = (pole.x * node.y - pole.y * node.x) * Math.sin(w)
+  const tilt = 23.43928 * DEG, r = -orbit.radiusKm / AU_KM
+  return { x: r * x, y: r * (-Math.sin(tilt) * y + Math.cos(tilt) * z), z: r * (-Math.cos(tilt) * y - Math.sin(tilt) * z) }
 }

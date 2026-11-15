@@ -13,6 +13,25 @@ Run `npm run camera:check` against Vite on port 5175 (or set `CAMERA_PREVIEW_URL
 
 ## Terrain and material pilot
 
+[Europa](docs/europa-surface.md) is available beneath Jupiter with complete
+reconstructed ice terrain and visible color. Five controlled USGS stereo sites
+retain their local relief, while mapped ridges and chaos constrain the global
+reconstruction. Rebuild with the `europa:fetch`, `europa:prepare`,
+`europa:build-terrain` and `europa:build-hillshade` scripts.
+
+[Io](docs/io-surface.md) is available beneath Jupiter with global reconstructed
+visible color and terrain. The NASA stereo DEM supports 53.83% of its surface;
+constrained volcanic plains complete the gaps. The UI identifies these
+reconstructions. Rebuild with the `io:fetch`, `io:prepare`, `io:build-terrain`,
+`io:build-detail` and `io:build-hillshade` scripts.
+
+[Enceladus](docs/enceladus-surface.md) is available beneath Saturn with global
+Cassini-derived terrain, its triaxial reference figure, reconstructed visible
+ice color and shading-only frost detail. It shares the cube-terrain renderer;
+its circular Saturn-relative orbit is approximate. Color reconstruction and
+source provenance are identified in the app. Rebuild with `enceladus:fetch`,
+`enceladus:prepare`, `enceladus:build-terrain` and `enceladus:build-hillshade`.
+
 [Mercury now uses measured visible-band color and shared cube terrain](docs/mercury-surface.md): final MESSENGER MDIS 630/560/480 nm reflectance, the installed 665 m USGS heightmap, and a streamed approximately 1 km hillshade release. The color is a visible-band approximation, with neutral missing-polar fill and no infrared/PCA enhancement.
 
 Moon, Mars and Mercury share a [profile-driven surface renderer](docs/planet-rendering-consolidation.md). They use measured cube-sphere terrain at true scale, continuous compact color, global hillshade and body-specific material profiles. Moon/Mars have shading-only generated surface detail; Mercury initially leaves it off. Color and available detail assets load on first visit.
