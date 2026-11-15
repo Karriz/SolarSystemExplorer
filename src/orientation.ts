@@ -1,10 +1,11 @@
-import { julianDate, type BodyId } from './ephemeris'
+import { julianDate, type BodyId } from './ephemeris.ts'
 
 // JPL NAIF pck00011.tpc (IAU 2015 recommendations, except Earth/Moon).
 // RA and Dec are the rotation pole in J2000 equatorial coordinates; W is
 // the eastward prime-meridian angle. T is centuries, d is days from J2000.
 // https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc
 const models: Partial<Record<BodyId, { ra: [number, number]; dec: [number, number]; w: [number, number] }>> = {
+  sun: { ra: [286.13, 0], dec: [63.87, 0], w: [84.176, 14.18440] },
   mercury: { ra: [281.0103, -.0328], dec: [61.4155, -.0049], w: [329.5988, 6.1385108] },
   venus: { ra: [272.76, 0], dec: [67.16, 0], w: [160.20, -1.4813688] },
   moon: { ra: [269.9949, .0031], dec: [66.5392, .0130], w: [38.3213, 13.17635815] },
@@ -19,7 +20,6 @@ const sin = (degrees: number) => Math.sin(degrees * Math.PI / 180)
 const cos = (degrees: number) => Math.cos(degrees * Math.PI / 180)
 
 export function orientationAt(id: BodyId, date: Date): { ra: number; dec: number; w: number } | null {
-  if (id === 'sun') return null
   const jd = julianDate(date)
   const d = jd - 2451545
   const t = d / 36525

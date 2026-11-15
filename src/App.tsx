@@ -1,3 +1,4 @@
+import { isGiantBody, giantPlanetProfiles } from './giantPlanetProfiles'
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { ArrowLeft, ChevronDown, Clock3, Compass, Focus, Info, Layers3, Pause, Play, RotateCcw, Search, X } from 'lucide-react'
 import { ExplorerScene, type ScreenMarker } from './ExplorerScene'
@@ -35,6 +36,7 @@ export default function App() {
   const dateRef = useRef(new Date())
   const [date, setDate] = useState(dateRef.current)
   const [selected, setSelected] = useState<BodyId>('sun')
+  const [showIntroduction, setShowIntroduction] = useState(true)
   const [venusSurfaceView, setVenusSurfaceView] = useState(false)
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
@@ -116,6 +118,7 @@ export default function App() {
   }, [playing, speed])
 
   function choose(id: BodyId) {
+    setShowIntroduction(false)
     setSelected(id)
     setInfoOpen(true)
     setSearchOpen(false)
@@ -139,7 +142,7 @@ export default function App() {
       <div className="scene-vignette" />
 
       <header className="topbar">
-        <div className="brand" onClick={() => { sceneRef.current?.overview(); setSelected('sun') }} role="button" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') { sceneRef.current?.overview(); setSelected('sun') } }}>
+        <div className="brand" onClick={() => { sceneRef.current?.overview(); setShowIntroduction(true); setSelected('sun') }} role="button" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') { sceneRef.current?.overview(); setShowIntroduction(true); setSelected('sun') } }}>
           <span className="brand-mark"><span /></span>
           <span><strong>ORRERY</strong><small>SOLAR SYSTEM EXPLORER</small></span>
         </div>
@@ -175,10 +178,10 @@ export default function App() {
         </button>)}
       </div>
 
-      {selected === 'sun' && <div className="scene-caption"><span className="eyebrow">THE COSMOS, AT YOUR FINGERTIPS</span><h1>Explore our<br /><em>Solar System.</em></h1><p>Travel through space and time. Discover the worlds that orbit our Sun.</p></div>}
+      {selected === 'sun' && showIntroduction && <div className="scene-caption"><span className="eyebrow">THE COSMOS, AT YOUR FINGERTIPS</span><h1>Explore our<br /><em>Solar System.</em></h1><p>Travel through space and time. Discover the worlds that orbit our Sun.</p></div>}
 
       <div className="view-controls">
-        <button title="Solar System overview" onClick={() => { sceneRef.current?.overview(); setSelected('sun'); setInfoOpen(true) }}><Compass size={18} /> <span>Overview</span></button>
+        <button title="Solar System overview" onClick={() => { sceneRef.current?.overview(); setShowIntroduction(true); setSelected('sun'); setInfoOpen(true) }}><Compass size={18} /> <span>Overview</span></button>
         <button title="Toggle orbit paths" className={showOrbits ? 'control-on' : ''} onClick={() => { sceneRef.current?.setOrbits(!showOrbits); setShowOrbits(!showOrbits) }}><Layers3 size={18} /> <span>Orbits</span></button>
       </div>
 
@@ -192,6 +195,8 @@ export default function App() {
           <div className="terrain-options"><button aria-pressed={venusSurfaceView} onClick={() => { const reveal = !venusSurfaceView; sceneRef.current?.setAtmosphereVisible('venus', !reveal); setVenusSurfaceView(reveal) }}>{venusSurfaceView ? 'Show atmosphere and clouds' : 'Reveal surface'}</button></div>
           <div className="surface-source">{venusSurfaceView ? 'Scientific surface view · atmosphere and clouds hidden' : 'Visible-light model · the cloud deck obscures the surface'}</div>
         </div>}
+        {isGiantBody(selected) && <div className="surface-source">Atmosphere: modeled clouds and haze · illustrative motion<br /><a href={giantPlanetProfiles[selected].source} target="_blank" rel="noreferrer">NASA reference shape</a> · 1 bar level</div>}
+        {selected === 'sun' && <div className="surface-source">Modeled <a href="https://science.nasa.gov/sun/facts/" target="_blank" rel="noreferrer">visible-light photosphere</a> and sunspots · corona and photographic glare enhanced for visibility</div>}
         {selected !== 'sun' && <div className="surface-source">Rotation: <a href={selected === 'earth' ? 'https://aa.usno.navy.mil/faq/GAST' : 'https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc'} target="_blank" rel="noreferrer">{selected === 'earth' ? 'USNO sidereal time' : 'JPL NAIF planetary constants'}</a> · approximate</div>}
         {textureSources[selected] && !surfaceProfile && <div className="surface-source">Surface: <a href={textureSources[selected]!.page} target="_blank" rel="noreferrer">{textureSources[selected]!.label}</a> · {textureSources[selected]!.credit}</div>}
         {surfaceProfile && <>
@@ -224,7 +229,7 @@ export default function App() {
           {terrainStatus.source?.gaps && <div className="surface-source">Elevation gaps use the reference sphere without measured relief.</div>}
           {terrainStatus.source?.approximate && <div className="surface-source">Heights above the Martian areoid, shown on a mean-radius sphere.</div>}
         </div>}
-        <div className="info-actions"><button onClick={() => sceneRef.current?.focus(selected)}><Focus size={16} /> Focus view</button>{selected !== 'sun' && <button className="quiet" onClick={() => { const parent: BodyId = selected === 'moon' ? 'earth' : 'sun'; choose(parent) }}><ArrowLeft size={16} /> {selected === 'moon' ? 'Earth' : 'Sun'}</button>}</div>
+        <div className="info-actions"><button onClick={() => { setShowIntroduction(false); sceneRef.current?.focus(selected) }}><Focus size={16} /> Focus view</button>{selected !== 'sun' && <button className="quiet" onClick={() => { const parent: BodyId = selected === 'moon' ? 'earth' : 'sun'; choose(parent) }}><ArrowLeft size={16} /> {selected === 'moon' ? 'Earth' : 'Sun'}</button>}</div>
       </section>}
       {!infoOpen && <button className="reopen-info" onClick={() => setInfoOpen(true)}><Info size={17} /> Show details</button>}
 

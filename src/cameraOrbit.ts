@@ -1,7 +1,8 @@
 import * as THREE from 'three'
+import { rayEllipsoidInterval } from './atmosphereMath.ts'
 import { SURFACE_CLEARANCE } from './cameraSafety.ts'
 
-export type CameraBody = { id: string; center: THREE.Vector3; rotation: THREE.Quaternion; radius: number }
+export type CameraBody = { id: string; center: THREE.Vector3; rotation: THREE.Quaternion; radius: number; ellipsoid?: THREE.Vector3 }
 const ZOOM_RESPONSE_SECONDS = .14
 
 /** Body-centered orbital navigation blending into ground-anchored controls. */
@@ -139,6 +140,13 @@ export class BodyCameraControls {
 
   hit(point: THREE.Vector2): THREE.Vector3 | null {
     const ray = this.screenRay(point)
+    if (this.body.ellipsoid) {
+      const inverse = this.body.rotation.clone().invert()
+      const interval = rayEllipsoidInterval(ray.origin.clone().sub(this.body.center).applyQuaternion(inverse),
+        ray.direction.clone().applyQuaternion(inverse), this.body.ellipsoid)
+      if (!interval || interval[1] < 0) return null
+      return ray.at(interval[0] >= 0 ? interval[0] : interval[1], new THREE.Vector3())
+    }
     return this.hitGround?.(ray) ?? ray.intersectSphere(new THREE.Sphere(this.target, this.body.radius), new THREE.Vector3())
   }
 

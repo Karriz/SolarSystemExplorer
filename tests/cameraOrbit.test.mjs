@@ -628,3 +628,18 @@ test('animated cursor zoom reconciles its anchor with changing terrain elevation
   close(s.camera.position.length() - s.groundRadius(s.camera.position), initialHeight * Math.exp(-300 * .00064), 1e-8)
   s.controls.dispose()
 })
+
+test('oblate body picking rejects the spherical polar fringe and follows body rotation', () => {
+  const s=setup(1,4)
+  s.camera.position.set(0,0,4);s.camera.lookAt(0,0,0);s.camera.updateMatrixWorld()
+  s.body.ellipsoid=new THREE.Vector3(1,.8,1);s.controls.setBody(s.body)
+  const fringe=new THREE.Vector3(0,.9,0).project(s.camera)
+  const screen=new THREE.Vector2((fringe.x*.5+.5)*800,(.5-fringe.y*.5)*600)
+  assert.equal(s.controls.hit(screen),null)
+  const center=s.controls.hit(new THREE.Vector2(400,300));assert.ok(center)
+  close(center.z,1)
+  s.body.rotation.setFromAxisAngle(new THREE.Vector3(0,0,1),Math.PI/2)
+  s.controls.setBody(s.body)
+  assert.ok(s.controls.hit(screen),'the equatorial limb should be pickable after rotating the ellipsoid')
+  s.controls.dispose()
+})

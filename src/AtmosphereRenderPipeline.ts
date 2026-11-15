@@ -1,4 +1,7 @@
 import * as THREE from 'three'
+import { GiantPlanetRenderer } from './GiantPlanetRenderer.ts'
+import { SolarRenderer } from './SolarRenderer.ts'
+import type { GiantBody } from './giantPlanetProfiles.ts'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { AtmosphereRenderer, type AtmosphereFrame } from './AtmosphereRenderer.ts'
 import { marsAtmosphere, venusAtmosphere, type AtmosphereBody } from './atmosphereProfiles.ts'
@@ -9,12 +12,16 @@ const TARGET_BUDGET = 80 * 1024 * 1024
  * the single display transform. Transparent objects retain scene ordering;
  * joint cloud/transparent-medium integration remains a later stage. */
 export class AtmosphereRenderPipeline {
+  readonly giants = new Map<GiantBody, GiantPlanetRenderer>()
+  solar?: SolarRenderer
+  private appearanceSun?: THREE.Mesh
   readonly atmosphere = new AtmosphereRenderer()
   readonly atmospheres = { earth: this.atmosphere, mars: new AtmosphereRenderer(marsAtmosphere), venus: new AtmosphereRenderer(venusAtmosphere) }
   private readonly compositionOrder = { value: new THREE.Vector3(0, 1, 2) }
   private readonly renderer: THREE.WebGLRenderer
   private readonly output = new OutputPass()
   private readonly size = new THREE.Vector2()
+  private readonly viewport = new THREE.Vector2()
   private target: THREE.WebGLRenderTarget | null = null
   private fallbackReason: string | null = null
   private disposed = false
@@ -65,6 +72,17 @@ export class AtmosphereRenderPipeline {
       .replace('gl_FragColor = texture2D( tDiffuse, vUv );', 'gl_FragColor = composeAtmospheres(vUv,texture2D(tDiffuse,vUv));')
   }
 
+  attachGiant(id: GiantBody, body: THREE.Mesh) {
+    this.giants.get(id)?.dispose()
+    this.giants.set(id, new GiantPlanetRenderer(id, body))
+  }
+  attachSun(body: THREE.Mesh) {
+    this.appearanceSun = body
+    this.solar = new SolarRenderer(body)
+    this.solar.configureOutput(this.output.material)
+    this.output.material.needsUpdate = true
+  }
+
   /** Drawing-buffer pixels, not CSS pixels. Resizing releases old attachments. */
   resize() {
     if (this.disposed || this.fallbackReason) return
@@ -97,10 +115,14 @@ export class AtmosphereRenderPipeline {
     }
   }
 
-  render(scene: THREE.Scene, camera: THREE.Camera, atmosphereFrame?: AtmosphereFrame | AtmosphereFrame[]) {
+  render(scene: THREE.Scene, camera: THREE.Camera, atmosphereFrame?: AtmosphereFrame | AtmosphereFrame[], date = new Date()) {
     if (this.disposed) return
     this.resize()
     const frames = Array.isArray(atmosphereFrame) ? atmosphereFrame : atmosphereFrame ? [atmosphereFrame] : []
+    if (this.appearanceSun) {
+      this.giants.forEach(giant => giant.update(camera, date, this.appearanceSun!.position))
+      this.solar?.update(camera, this.target?.depthTexture ?? null, this.renderer.getSize(this.viewport))
+    }
     const ids: AtmosphereBody[] = ['earth', 'mars', 'venus']
     for (const id of ids) {
       const frame = frames.find(frame => (frame.id ?? 'earth') === id)
@@ -141,7 +163,9 @@ export class AtmosphereRenderPipeline {
       samples: target?.samples ?? 0, frames: this.frames,
       // RGBA16F + depth24 (conservatively 4 bytes), resolved + MSAA.
       estimatedAttachmentBytes: target ? target.width * target.height * 12 * (1 + target.samples) : 0,
-      atmosphereEnabled: Object.values(this.atmospheres).some(air => air.lighting.atmEnabled.value > 0),
+      atmosphereEnabled: Object.values(this.atmospheres).some(air => air.lighting.atmEnabled.value > 0)
+        || [...this.giants.values()].some(giant => giant.metrics().active),
+      giants: Object.fromEntries([...this.giants].map(([id, giant]) => [id, giant.metrics()])), solar: this.solar?.metrics(),
       atmosphere: this.atmosphere.metrics(),
       atmospheres: Object.fromEntries(Object.entries(this.atmospheres).map(([id, air]) => [id, air.metrics()])),
     }
@@ -153,6 +177,8 @@ export class AtmosphereRenderPipeline {
     this.target?.dispose()
     this.target = null
     Object.values(this.atmospheres).forEach(air => air.dispose())
+    this.giants.forEach(giant => giant.dispose())
+    this.solar?.dispose()
     this.output.dispose()
   }
 }

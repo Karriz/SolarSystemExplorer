@@ -1,4 +1,6 @@
 import * as THREE from 'three'
+import { rayEllipsoidInterval } from './atmosphereMath'
+import { giantBodies, giantPlanetProfiles, giantBoundaryRadius, isGiantBody, AU_KM } from './giantPlanetProfiles'
 import { bodyInfo, bodyOrder, orbitPathAt, planetOrder, positionAt, radiusAu, type BodyId } from './ephemeris'
 import { textureSources } from './textureSources'
 import { orientationAt } from './orientation'
@@ -22,7 +24,6 @@ import type { AtmosphereBody } from './atmosphereProfiles'
 export type ScreenMarker = { id: BodyId; x: number; y: number; visible: boolean }
 const DAY_MS = 86400000
 const DEG = Math.PI / 180
-const RING_NORMAL = new THREE.Vector3(0, 0, 1)
 
 function vector(id: BodyId, date: Date): THREE.Vector3 {
   const p = positionAt(id, date)
@@ -53,15 +54,6 @@ function makeTexture(id: BodyId): THREE.CanvasTexture {
     ctx.fillStyle = 'rgba(236,248,244,.65)'
     for (let i = 0; i < 22; i++) {
       ctx.beginPath(); ctx.ellipse(rand() * 512, rand() * 256, 14 + rand() * 35, 2 + rand() * 6, 0, 0, Math.PI * 2); ctx.fill()
-    }
-  } else if (['jupiter', 'saturn', 'uranus', 'neptune'].includes(id)) {
-    for (let i = 0; i < 48; i++) {
-      ctx.fillStyle = `rgba(${id === 'neptune' ? '211,229,255' : '255,246,220'},${0.02 + rand() * 0.1})`
-      ctx.fillRect(0, rand() * 256, 512, 1 + rand() * 11)
-    }
-    if (id === 'jupiter') {
-      ctx.fillStyle = 'rgba(171,95,69,.55)'
-      ctx.beginPath(); ctx.ellipse(350, 159, 35, 13, -.1, 0, Math.PI * 2); ctx.fill()
     }
   } else {
     for (let i = 0; i < 100; i++) {
@@ -118,7 +110,6 @@ export class ExplorerScene {
   private moonOrbitDate = 0
   private planetOrbits = new Map<BodyId, THREE.LineLoop>()
   private planetOrbitDate = 0
-  private saturnRings: THREE.Group | null = null
   private textureLoader = new THREE.TextureLoader()
   private earthSurface!: EarthSurfaceRenderer
   private planetSurfaces = new Map<SolidSurfaceBody, PlanetSurfaceRenderer>()
@@ -133,10 +124,25 @@ export class ExplorerScene {
   private onPilotStatus?: (body: 'earth' | 'moon', metrics: RegionalMetrics) => void
   private pilotAltitude: { direction: THREE.Vector3; altitude: number; until: number } | null = null
   private lastAltitudeMeters = 0
-  private hitGround = (ray: THREE.Ray) => this.regional.get(this.selected as 'earth' | 'moon')?.hitGround(ray)
+  private hitGround = (ray: THREE.Ray) => this.giantHit(ray) ?? this.regional.get(this.selected as 'earth' | 'moon')?.hitGround(ray)
     ?? this.terrain.get(this.selected as TerrainBody)?.hitGround(ray) ?? null
-  private groundRadius = (position: THREE.Vector3) => this.regional.get(this.selected as 'earth' | 'moon')?.cameraSurfaceRadius(position)
+  private groundRadius = (position: THREE.Vector3) => this.giantRadius(this.selected, position) ?? this.regional.get(this.selected as 'earth' | 'moon')?.cameraSurfaceRadius(position)
     ?? this.terrain.get(this.selected as TerrainBody)?.cameraSurfaceRadius(position) ?? radiusAu(this.selected)
+  private giantRadius(id: BodyId, position: THREE.Vector3) {
+    if (!isGiantBody(id)) return undefined
+    const body = this.bodies.get(id)!
+    const local = position.clone().sub(body.position).applyQuaternion(body.quaternion.clone().invert())
+    return giantBoundaryRadius(giantPlanetProfiles[id], local)
+  }
+  private giantHit(ray: THREE.Ray) {
+    if (!isGiantBody(this.selected)) return null
+    const body = this.bodies.get(this.selected)!, p = giantPlanetProfiles[this.selected]
+    const axes = new THREE.Vector3(p.equatorialKm, p.polarKm, p.equatorialKm).divideScalar(AU_KM)
+    const inverse = body.quaternion.clone().invert()
+    const interval = rayEllipsoidInterval(ray.origin.clone().sub(body.position).applyQuaternion(inverse),
+      ray.direction.clone().applyQuaternion(inverse), axes)
+    return interval && interval[1] >= 0 ? ray.at(interval[0] >= 0 ? interval[0] : interval[1], new THREE.Vector3()) : null
+  }
   private onControlStart = () => { this.focusDistance = null; this.focusDirection = null; this.pilotAltitude = null }
 
   constructor(container: HTMLElement, onMarkers: (markers: ScreenMarker[]) => void,
@@ -170,6 +176,9 @@ export class ExplorerScene {
     // Normalize brightness across orbital distances so every globe shows its solar terminator.
     this.sunLight = new THREE.PointLight('#fff0d0', 3, 0, 0)
     this.scene.add(this.sunLight)
+    // Draw the background before transmitting cloud/ring proxies, so their
+    // alpha attenuates stars rather than their depth simply deleting them.
+    this.stars.renderOrder = -10
     this.scene.add(this.stars)
     this.createBodies()
     this.surfaceTiles = new GlobeTileLayer(this.bodies, this.renderer, new Set(['earth', ...solidSurfaceBodies]))
@@ -201,7 +210,7 @@ export class ExplorerScene {
     for (const id of bodyOrder) {
       const radius = radiusAu(id)
       const geometry = isSolidSurfaceBody(id)?cubeSphereGeometry(radius):new THREE.SphereGeometry(radius, id === 'sun' ? 96 : 128, 96)
-      const material = id === 'sun'
+      const material = id === 'sun' || isGiantBody(id)
         ? new THREE.MeshBasicMaterial({ color: '#ffda87' })
         : new THREE.MeshStandardMaterial({ map: makeTexture(id), roughness: 1, metalness: 0 })
       const mesh = new THREE.Mesh(geometry, material)
@@ -212,18 +221,8 @@ export class ExplorerScene {
       this.bodies.set(id, mesh)
       if (textureSources[id] && id !== 'earth' && !isSolidSurfaceBody(id)) this.loadSurface(id)
     }
-    this.createSaturnRings()
-    const sunGlowCanvas = document.createElement('canvas')
-    sunGlowCanvas.width = sunGlowCanvas.height = 128
-    const ctx = sunGlowCanvas.getContext('2d')!
-    const gradient = ctx.createRadialGradient(64, 64, 4, 64, 64, 64)
-    gradient.addColorStop(0, 'rgba(255,222,151,.8)')
-    gradient.addColorStop(.23, 'rgba(255,177,96,.28)')
-    gradient.addColorStop(1, 'rgba(255,166,89,0)')
-    ctx.fillStyle = gradient; ctx.fillRect(0, 0, 128, 128)
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(sunGlowCanvas), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }))
-    glow.scale.setScalar(.1)
-    this.bodies.get('sun')!.add(glow)
+    for (const id of giantBodies) this.renderPipeline.attachGiant(id, this.bodies.get(id)!)
+    this.renderPipeline.attachSun(this.bodies.get('sun')!)
   }
 
   private loadSurface(id: BodyId) {
@@ -245,24 +244,6 @@ export class ExplorerScene {
     }, undefined, () => {
       // Keep the procedural map when an asset is unavailable.
     })
-  }
-
-  private createSaturnRings() {
-    const rings = new THREE.Group()
-    const kmToAu = radiusAu('saturn') / bodyInfo.saturn.radiusKm
-    // NASA ring radii: C, B, and A rings. The gap between B and A is the Cassini Division.
-    for (const [innerKm, outerKm, color, opacity] of [
-      [74658, 91975, '#a8a49c', .35],
-      [91975, 117507, '#e5d4b2', .78],
-      [122340, 136780, '#cdb991', .68],
-    ] as const) {
-      rings.add(new THREE.Mesh(
-        new THREE.RingGeometry(innerKm * kmToAu, outerKm * kmToAu, 128),
-        new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity, depthWrite: false }),
-      ))
-    }
-    this.scene.add(rings)
-    this.saturnRings = rings
   }
 
   private updateBodyOrientations() {
@@ -287,7 +268,6 @@ export class ExplorerScene {
       const eastBasis = new THREE.Vector3().crossVectors(prime, pole).normalize()
       const basis = new THREE.Matrix4().makeBasis(prime, pole, eastBasis)
       this.bodies.get(id)!.quaternion.setFromRotationMatrix(basis)
-      if (id === 'saturn') this.saturnRings?.quaternion.setFromUnitVectors(RING_NORMAL, pole)
     }
   }
 
@@ -369,7 +349,8 @@ export class ExplorerScene {
     this.focus(body)
     this.focusDistance = null; this.focusDirection = null
     const direction = geoDirection(lat, lon).applyQuaternion(this.bodies.get(body)!.quaternion)
-    this.camera.position.copy(direction).multiplyScalar(radiusAu(body) + altitude / 149_597_870_700)
+    const boundary = isGiantBody(body) ? giantBoundaryRadius(giantPlanetProfiles[body], geoDirection(lat, lon), 0) : radiusAu(body)
+    this.camera.position.copy(direction).multiplyScalar(boundary + Math.max(isGiantBody(body) ? 20000 : 100, altitude) / 149_597_870_700)
     this.pilotAltitude = { direction: geoDirection(lat, lon), altitude, until: performance.now() + 15000 }
     this.camera.up.set(0, 1, 0).applyQuaternion(this.bodies.get(body)!.quaternion)
     this.camera.lookAt(0, 0, 0)
@@ -389,12 +370,12 @@ export class ExplorerScene {
 
   focus(id: BodyId) {
     this.pilotAltitude = null
-    this.recenterControls(radiusAu(id))
+    this.recenterControls(isGiantBody(id) ? (giantPlanetProfiles[id].equatorialKm + 20) / AU_KM : radiusAu(id))
     this.selected = id
     this.origin.copy(vector(id, this.date))
     this.focusDirection = null
-    if (id === 'earth') {
-      // Show both the illuminated ocean and the terminator on initial focus.
+    if (id === 'earth' || isGiantBody(id)) {
+      // Show the illuminated hemisphere and terminator on initial focus.
       const towardSun = vector('sun', this.date).sub(vector(id, this.date)).normalize()
       const current = this.camera.position.clone().sub(this.controls.target).normalize()
       const tangent = current.addScaledVector(towardSun, -current.dot(towardSun))
@@ -445,7 +426,6 @@ export class ExplorerScene {
       const mesh = this.bodies.get(id)!
       mesh.position.copy(vector(id, this.date)).sub(this.origin)
     }
-    this.saturnRings?.position.copy(this.bodies.get('saturn')!.position)
     for (const orbit of this.orbits) {
       orbit.position.copy(orbit.userData.moonOrbit ? vector('earth', this.date) : new THREE.Vector3()).sub(this.origin)
     }
@@ -466,7 +446,9 @@ export class ExplorerScene {
     this.controls.target.set(0, 0, 0)
     const selectedBody = this.bodies.get(this.selected)!
     this.controls.setBody({ id: this.selected, center: selectedBody.position,
-      rotation: selectedBody.quaternion, radius: radiusAu(this.selected) }, this.focusDistance === null)
+      rotation: selectedBody.quaternion, radius: this.giantRadius(this.selected, this.camera.position) ?? radiusAu(this.selected),
+      ellipsoid: isGiantBody(this.selected) ? new THREE.Vector3(giantPlanetProfiles[this.selected].equatorialKm,
+        giantPlanetProfiles[this.selected].polarKm, giantPlanetProfiles[this.selected].equatorialKm).divideScalar(AU_KM) : undefined }, this.focusDistance === null)
     const now = performance.now(), viewportHeight = this.container.clientHeight * this.renderer.getPixelRatio()
     let terrainBody: TerrainBody | null = null
     for (const [id, layer] of this.terrain) {
@@ -488,7 +470,7 @@ export class ExplorerScene {
     // already be over different terrain in this frame.
     const collisionSurfaces = bodyOrder.map(id => ({
       center: this.bodies.get(id)!.position,
-      radius: this.regional.get(id as 'earth' | 'moon')?.cameraSurfaceRadius(this.camera.position)
+      radius: this.giantRadius(id, this.camera.position) ?? this.regional.get(id as 'earth' | 'moon')?.cameraSurfaceRadius(this.camera.position)
         ?? this.terrain.get(id as TerrainBody)?.cameraSurfaceRadius(this.camera.position) ?? radiusAu(id),
     }))
     const selectedSurface = collisionSurfaces[bodyOrder.indexOf(this.selected)]
@@ -558,7 +540,7 @@ export class ExplorerScene {
     this.renderPipeline.render(this.scene, this.camera, (['earth', 'mars', 'venus'] as const).map(id => ({
       id, date: this.date, body: this.bodies.get(id)!, sun: this.bodies.get('sun')!.position, solarColor: this.sunLight.color,
       stars: { material: this.stars.material as THREE.PointsMaterial, opacity: .72 },
-    })))
+    })), this.date)
   }
 
   private resize() {

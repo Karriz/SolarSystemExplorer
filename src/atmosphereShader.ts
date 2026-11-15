@@ -1,3 +1,4 @@
+import { atmosphereGeometryShader } from './atmosphereGeometryShader.ts'
 import { phaseAsRgb, type AtmosphereProfile, type OpticalRgb } from './atmosphereProfiles.ts'
 
 const scalar = (n: number) => n.toExponential(10)
@@ -28,15 +29,8 @@ export function atmosphereCommon(profile: AtmosphereProfile) {
     const vec3 ATM_AEROSOL = ${rgb(profile.aerosolScattering)};
     const vec3 ATM_AEROSOL_ABSORPTION = ${rgb(profile.aerosolAbsorption)};
     const vec3 ATM_OZONE = ${rgb(profile.ozoneAbsorption)};
-    vec2 atmSphere(vec3 p, vec3 d, float r) {
-      float b=dot(p,d), disc=r*r-dot(cross(p,d),cross(p,d));
-      if(disc<0.0) return vec2(1.0,-1.0);
-      float root=sqrt(disc);
-      if(root==0.0) return vec2(-b);
-      float q=-b-(b<0.0?-root:root);
-      float len=length(p), other=(len-r)*(len+r)/q;
-      return vec2(min(q,other),max(q,other));
-    }
+    ${atmosphereGeometryShader}
+    vec2 atmSphere(vec3 p, vec3 d, float r) { return atmGeometrySphere(p,d,r); }
     vec2 atmTexelUv(vec2 uv, vec2 size) { return (clamp(uv,0.0,1.0)*(size-1.0)+0.5)/size; }
     vec2 atmTransUv(float radius, float mu) {
       float r=clamp(radius,ATM_RADIUS,ATM_TOP);

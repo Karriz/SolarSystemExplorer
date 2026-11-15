@@ -1,9 +1,105 @@
 # Atmosphere and clouds implementation plan
 
 Proposed November 14, 2026. Status: stages 1–3 implemented: shared foundation,
-Earth clear air, Mars dust, and Venus dense atmosphere/clouds. Observed Earth
-clouds, Titan and giant profiles remain pending. Scope: Earth, Mars, Venus,
-Titan, Jupiter, Saturn, Uranus, Neptune. See [current implementation](atmosphere-rendering.md).
+Earth clear air, Mars dust, and Venus dense atmosphere/clouds. A first giant
+cloud/haze backend and solar appearance were added November 15; observed Earth
+clouds and Titan remain pending. Scope: Earth, Mars, Venus,
+Titan, Jupiter, Saturn, Uranus, Neptune, and the Sun. See [current implementation](atmosphere-rendering.md).
+
+## Next priority: giant planets and the Sun
+
+Proposed November 15, 2026 following the request for more realistic Sun and
+giant-planet appearance. Prioritize stage 5 ahead of observed Earth clouds;
+extend scope to the Sun through the same linear HDR/depth pipeline. This
+section now has a first implementation: bounded ellipsoidal cloud/haze transport
+for all four giants, internally ordered Saturn rings/shadows, and a modeled
+photosphere/corona. Internal cloud volumes, observed weather and hardware timing
+remain future work. See the implementation notes for approximations and evidence.
+
+Current code inspection confirms that all four giants use 512 × 256 generated
+canvas bands on spherical standard materials, with no giant atmosphere profiles.
+The Sun uses a flat basic material and an additive sprite. The final pipeline
+currently compiles three fixed atmosphere functions for Earth, Mars and Venus.
+
+### A. Jupiter and the shared giant boundary
+
+- Add a dedicated giant cloud owner and body profiles. Separate opaque cloud
+  radiance/depth from upper-atmosphere scattering; use the existing body-relative
+  optical coordinates, lazy resources and single display transform.
+- Define the reference pressure radius and equatorial/polar radii explicitly.
+  Use the same ellipsoid for cloud geometry, atmospheric ray intersections,
+  lighting normals, picking and camera clearance. Keep cameras above the
+  supported cloud boundary until internal cloud transport exists.
+- Start with Jupiter: cream zones, brown belts, coherent swirls and a modeled
+  Great Red Spot. Use documented visible-light maps where suitable and clearly
+  label generated structure. Do not bake directional illumination into albedo.
+- Anchor detail in body coordinates. Add restrained latitude-dependent drift
+  derived from simulation time; preserve storm identity and avoid texture
+  stretching, longitude seams and polar pinching. Motion is illustrative,
+  not a reconstruction of weather on the selected date.
+- Retain the established Earth/Mars/Venus LUT paths and register giants as
+  bounded visible-body backends. Avoid evaluating seven atmosphere shaders
+  across every pixel. Within Saturn's backend, resolve cloud/haze/ring ordering
+  by ray intervals rather than relying on object-center sorting.
+
+Gate: inspect Jupiter in daylight, crescent, night, polar and grazing views;
+orbit and zoom continuously, cross the longitude seam, change date, resize and
+switch bodies. Verify stable detail and silhouettes, opaque cloud occlusion,
+camera clearance, allocation bounds and exact-once disposal.
+
+### B. Saturn, Uranus and Neptune
+
+- Saturn: subdued gold bands and upper haze, oblate silhouette, and detailed
+  radial ring opacity. Share one ring optical-depth field between visible
+  rings and ring shadows on clouds. Include the planet's shadow on rings.
+  Composite front/back rings at their actual ray depths relative to haze;
+  the current flattened transparent scene color is insufficient for this.
+- Uranus: pale cyan, restrained bands and stronger smoothing by haze.
+- Neptune: a slightly bluer cyan appearance with more visible cloud structure.
+  Use the revised visible-color references rather than the familiar saturated
+  Voyager presentation. Bright clouds and storms remain modeled or dated.
+
+Gate: inspect all bodies at matched illumination and exposure. For Saturn,
+include both ring faces, edge-on rings, sunlit/unlit sides, ring/planet shadows,
+and camera motion through ring/globe overlaps. Repeat phone viewport and body
+switch checks. Never expose an artificial rocky surface beneath giant clouds.
+
+### C. Solar photosphere and outer emission
+
+- Add a separate solar renderer sharing HDR color, depth, body transforms,
+  resource ownership and final output with the atmosphere pipeline. Planetary
+  scattering LUTs do not describe a self-emitting stellar atmosphere.
+- Replace the flat yellow disc with a near-white emissive photosphere,
+  view-dependent limb darkening, scale-filtered granulation and restrained
+  modeled sunspots with penumbrae. Keep structures anchored to the rotating
+  Sun; any evolution is illustrative and independent of live solar activity.
+- Replace the fixed sprite with depth-aware, bounded outer emission. Keep
+  corona brightness subordinate to the disc at ordinary exposure. If extra
+  visibility is needed, document the presentation gain; do not treat colored
+  extreme-ultraviolet imagery as natural visible-light appearance.
+- Keep optical emission separate from scene-light normalization. Preserve
+  planetary presentation brightness while tuning the solar disc. Filter small
+  detail by projected size to prevent crawling and aliasing during zoom.
+- Foreground bodies and atmospheres must occlude or attenuate solar emission;
+  test the full disc and halo, including eclipsing silhouettes. Keep one output
+  transform and verify reduced-capability rendering.
+
+Gate: inspect full-disc and close views, orbit/zoom/date motion, foreground
+occlusion, atmospheric sunset attenuation and resize. Confirm the disc retains
+readable structure at the chosen exposure and that outer emission does not
+bleed through planets or rings.
+
+### Verification and references for this extension
+
+Capture fixed-date before/after browser images for each delivery step. Run
+targeted geometry/optics/lifecycle checks, the existing atmosphere regressions,
+tests and production build. Record remaining visual limits and GPU allocations;
+software-renderer timings do not establish hardware performance acceptance.
+
+- [NASA Sun facts: photosphere and outer atmosphere](https://science.nasa.gov/sun/facts/)
+- [ESA Solar Orbiter visible-light photosphere reference](https://www.esa.int/media/phi-s-view-of-the-sun-in-visible-light)
+- [NASA Cassini natural-color rings and shadows](https://science.nasa.gov/resource/colorful-threads-and-shadows/)
+- [Oxford revised Uranus/Neptune visible colors](https://www.ox.ac.uk/news/2024-01-05-new-images-reveal-what-neptune-and-uranus-really-look-0)
 
 ## Intended result
 
@@ -24,8 +120,9 @@ optical parameters are identified as modeled appearance.
 - `pilotImageSample()` and the animation loop now share final-frame rendering.
 - `ephemeris.ts` and `orientation.ts` have no Titan model. Parent navigation in
   `App.tsx` assumes that the Moon is the only satellite.
-- Giant planets currently use procedural fallback appearance; there is no
-  dedicated cloud renderer or giant-planet atmospheric boundary model.
+- `GiantPlanetRenderer.ts` now owns a bounded ray-integrated cloud/haze/ring
+  backend within the atmosphere pipeline. `SolarRenderer.ts` owns solar emission.
+  Giant cloud interiors remain unimplemented.
 
 ## Architecture and rendering decisions
 
@@ -157,7 +254,7 @@ no flashes on refresh, and usable offline/stale-data behavior. Inject download,
 decode, and storage failures. Never silently interpret missing source coverage
 as verified clear sky.
 
-### 5. Gas and ice giant cloud decks
+### 5. Gas and ice giant cloud decks (first pass implemented)
 
 Create body-specific opaque cloud boundaries, upper haze, and layered cloud
 appearance for Jupiter, Saturn, Uranus, and Neptune. Use a declared reference

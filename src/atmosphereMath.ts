@@ -18,6 +18,15 @@ export function raySphereInterval(origin: Vector3, direction: Vector3, radius: n
   return q < other ? [q, other] : [other, q]
 }
 
+/** Ellipsoid interval in the ray's original distance units. */
+export function rayEllipsoidInterval(origin: Vector3, direction: Vector3, axes: Vector3): [number, number] | null {
+  const transformedDirection = direction.clone().divide(axes)
+  const rate = transformedDirection.length()
+  if (!(rate > 0) || ![axes.x, axes.y, axes.z].every(v => v > 0 && Number.isFinite(v))) return null
+  const interval = raySphereInterval(origin.clone().divide(axes), transformedDirection.divideScalar(rate), 1)
+  return interval ? [interval[0] / rate, interval[1] / rate] : null
+}
+
 /** Clip air to the actual opaque endpoint. Do not substitute a reference
  * ground sphere: measured terrain can lie above or below it. */
 export function atmosphereRaySegment(origin: Vector3, direction: Vector3, topRadius: number,

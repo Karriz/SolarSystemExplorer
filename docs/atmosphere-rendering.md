@@ -1,8 +1,9 @@
 # Atmosphere rendering
 
-November 14, 2026. Stages 1–3 of the [implementation plan](atmosphere-implementation-plan.md).
+Updated November 15, 2026. Stages 1–3 and the first giant/solar pass of the [implementation plan](atmosphere-implementation-plan.md).
 Earth clear air, Mars dust, and Venus dense air/clouds are enabled by default.
-Observed Earth clouds, Titan and giant-planet profiles remain pending.
+Observed Earth clouds and Titan remain pending; giant cloud/haze profiles and
+solar appearance are enabled by default.
 
 ## Implemented
 
@@ -26,11 +27,10 @@ the existing renderer's allocations. Additional atmosphere/cloud resources will
 need their own accounting within the overall plan's budget. Devices without
 HDR attachments, or with an incomplete framebuffer, retain direct rendering.
 
-Existing transparent objects retain scene ordering for this stage. Overlapping
-transparent materials now blend linear radiance before tone mapping, which
-changes Saturn ring/globe overlap slightly. A separate analytic overlap fixture
-checks the intended color. Depth-aware ring/atmosphere integration remains a
-later stage; this foundation alone does not solve atmospheric transparency.
+General transparent objects retain scene ordering. Overlapping transparent
+materials blend linear radiance before tone mapping. Saturn now uses a bounded
+ray backend that orders its own rings, clouds and haze; this does not provide a
+general arbitrary transparent-object/medium compositor.
 
 `atmosphereMath.ts` establishes CPU reference geometry in body-relative km:
 stable sphere intersections, forward air intervals clipped to actual terrain
@@ -215,3 +215,119 @@ terrain/color audits now explicitly choose surface inspection mode.
 - Earth and neutral-pipeline regressions are retained; runtime performance on a
   physical GPU still needs measurement. Procedural cloud variation is disabled
   in numerical probes so the GPU and reference both evaluate the mean column.
+
+
+## Giant cloud decks and solar appearance
+
+`AtmosphereRenderPipeline` owns four `GiantPlanetRenderer` instances and one
+`SolarRenderer`. Giants use an alternative bounded backend rather than adding
+four more full-screen LUT integrators. Earth/Mars/Venus keep their established
+transport code. `atmosphereGeometryShader.ts` shares stable grazing-ray roots
+and molecular phase equations across these backends. Each giant proxy is
+frustum/projected-size culled; no image requests, textures or workers are added.
+Metrics expose geometry bytes, activity, sample counts and reference radii.
+
+`giantPlanetProfiles.ts` declares conventional 1-bar reference ellipsoids from
+[NASA's fact sheets](https://nssdc.gsfc.nasa.gov/planetary/planetfact.html).
+These are explicit presentation reference shapes; an opaque deck at that
+boundary does not assert measured visible-cloud altitude. The body picking mesh,
+shader intersections, orbit picking and camera clearance share the ellipsoid.
+Cameras stop outside a supported-view margin of 20 km plus normal clearance.
+There is no rocky surface or access to an unimplemented interior.
+
+Cloud albedo is generated in continuous Cartesian body coordinates. Jupiter has
+latitude belts, multiscale turbulence and a localized modeled red vortex; Saturn
+has subdued gold bands; Uranus and Neptune use restrained cyan palettes informed
+by [Oxford's revised visible-color comparison](https://www.ox.ac.uk/news/2024-01-05-new-images-reveal-what-neptune-and-uranus-really-look-0).
+None is measured/live weather. Differential motion is a bounded periodic shear
+of the cloud field, separate from the approximate planetary rotation. It is
+illustrative, not a wind-speed retrieval. Pixel-footprint filtering removes
+unresolved noise octaves rather than allowing fine detail to crawl or alias.
+
+Upper haze uses 12 midpoint samples per nonempty segment in body-relative units,
+with an exponential density, fitted RGB vertical optical depths, molecular phase,
+planet shadow and Saturn ring attenuation. Cloud illumination uses an empirical
+diffuse/limb law and small diffuse fill. The model is an RGB appearance fit,
+not a spectral methane/ammonia calculation or the validated Venus dense solver.
+Ellipsoidal haze shells are homothetic approximations, not pressure surfaces
+from an atmospheric circulation model. Transparent halo display alpha uses mean
+RGB transmission; it approximates chromatic extinction over arbitrary backgrounds.
+
+Saturn's ring sheet and opaque clouds share one ray calculation. Haze integration
+splits at the ring intersection; rings behind clouds are excluded. The visible
+rings and cloud/haze shadow queries use one radial optical-depth field, including
+the Cassini division, a modeled Encke gap and filtered radial structure. Ring
+illumination includes the planet's geometric shadow, distinct sunlit/backlit
+faces and angular optical depth. The shader writes actual cloud/ring depth.
+Rings are infinitesimally thin; near-exact edge-on views have no modeled vertical
+thickness. Subsequent unrelated atmosphere passes see a partially transmitting
+ring's nearest depth as a single endpoint, so fully general overlapping-media
+composition remains outside this implementation.
+
+The Sun has a near-white emissive photosphere, limb darkening, filtered 3D
+cellular granulation and fixed modeled sunspot groups with umbrae/penumbrae.
+The rotation uses the [JPL NAIF solar pole and prime meridian](https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc).
+It is a fixed illustrative activity state for all simulation dates, not observed
+solar data. Appearance follows visible-light references from
+[ESA Solar Orbiter](https://www.esa.int/media/phi-s-view-of-the-sun-in-visible-light),
+rather than treating colored extreme-UV images as visible surface albedo.
+
+The final HDR compositor adds an optically thin, axisymmetric corona with 16
+samples before applying foreground planetary transmission. Actual scene depth
+clips the ray, so foreground opaque objects occlude disc and halo. Ray directions
+are reconstructed without division by the far homogeneous coordinate, which
+can round to zero at extreme near/far ratios. Corona brightness has a declared
+presentation gain; photosphere brightness and normalized planetary illumination
+are separate conventions. Direct fallback retains the photosphere and giant
+cloud/haze/rings but omits the depth-dependent solar corona. No flares,
+prominences, magnetic topology or dynamic solar activity are claimed.
+
+`npm run atmosphere:check-giants` saves fixed-date phase/pole/close-view images,
+application screenshots and JSON under `.terrain-cache/giant-atmospheres-browser/`.
+It checks repeated-frame stability (mean difference below 0.002/255 for MSAA
+edge rounding), periodic shear continuity, visible cloud motion, Saturn's planet
+shadow on rings, solar limb darkening/neutral color and foreground occlusion,
+close camera clearance, pointer gestures, phone resize and exact-once disposal.
+CPU tests cover ellipsoid rays/radial clearance, offscreen culling, rotation,
+compatibility behavior and resource ownership. Hardware GPU timing is unverified.
+
+
+November 15 verification: 168 tests pass; `npm run build:app` passes (the
+production app build avoids recopying unchanged terrain/hillshade releases).
+All four browser suites, `atmosphere:check-pipeline`, `atmosphere:check-earth`,
+`atmosphere:check-planets` and `atmosphere:check-giants`, completed without errors.
+The giant suite contains 24 fixed-light views plus application/phone captures.
+Its ring-shadow probe measured red-channel values of 7 in shadow and 198 in
+sunlight; a black foreground solar occluder remained exactly [0, 0, 0, 255].
+The four giant bodies together report 2,873,856 bytes of geometry attributes and
+indices, including their picking meshes, and zero texture bytes. These counts
+exclude driver overhead and existing pipeline targets. Browser rendering used
+ANGLE/SwiftShader; none of these runs establishes physical-GPU performance.
+
+
+## Planet-distance solar glare
+
+A photographic glare effect now keeps the Sun legible from planets, including
+when its true disc becomes subpixel at Jupiter/Neptune distances. It adds a soft
+warm halo, a bright compact core and restrained diffraction streaks in screen
+space. Its size is expressed in CSS pixels, and it fades out as the disc grows
+from 10 to 32 pixels in radius, preserving detailed close-up solar views. This
+is a presentation/lens effect, not an enlarged physical Sun or measured corona.
+
+Nine depth samples over the solar source attenuate glare during partial cover;
+a fully hidden source produces no halo. Two depth24 units of tolerance prevent
+quantization of the distant Sun's own depth from causing self-occlusion. Glare
+also avoids nearer foreground pixels, fades at screen edges and is disabled
+behind the camera. It enters linear HDR before the existing planetary atmosphere
+composition, so foreground air attenuates/tints it with the solar light. No
+additional textures, render targets or passes are allocated. Direct fallback
+omits glare along with the depth-dependent corona.
+
+`npm run sun:check-glare` checks 1, 5.2 and 30 AU, repeated frames, partial/full
+occlusion, close-up and behind-camera suppression, plus an actual Earth-to-Sun
+view. Captures and JSON are in `.terrain-cache/solar-glare-browser/`.
+
+The glare check completed with no browser/GL errors. At the sampled halo point,
+the red channel fell from 38 unobstructed to 13 under partial cover; complete
+source occlusion matched glare-disabled output exactly. All 168 tests and the
+production app build pass. These are software-renderer correctness checks.

@@ -78,7 +78,9 @@
     "earth:build-detail": "node scripts/build-earth-detail.mjs",
     "earth:check-zoom": "node scripts/check-earth-zoom-stability.mjs",
     "earth:check-shorelines": "node --experimental-strip-types scripts/check-earth-shoreline-filter.mjs",
-    "earth:check-surfaces": "node scripts/check-earth-surfaces.mjs"
+    "earth:check-surfaces": "node scripts/check-earth-surfaces.mjs",
+    "atmosphere:check-giants": "node scripts/check-giant-atmospheres.mjs",
+    "sun:check-glare": "node scripts/check-solar-glare.mjs"
   },
   "dependencies": {
     "@jsquash/webp": "^1.5.0",
