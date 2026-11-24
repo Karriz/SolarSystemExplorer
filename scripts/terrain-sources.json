@@ -241,5 +241,30 @@
     "cacheSubdirectory": "callisto",
     "coverageNotes": "No global measured numeric DEM exists; terrain is constrained by IAU/USGS named multi-ring basins, craters and catenae plus seeded ancient cratered plains.",
     "license": "USGS public-domain mosaic and IAU/USGS planetary nomenclature"
+  },
+  "titan": {
+    "product": "corlies2017-completed-v1",
+    "file": "titan-radial.tif",
+    "url": "offline-prepared:build-titan.py",
+    "sha256": "4c895965fae0ba4fa4c33fe181a11d38fb536424022d69135c101b7c1beb53b0",
+    "width": 16384,
+    "height": 8192,
+    "sourceWest": -180,
+    "sourceScale": 1,
+    "scaleMeters": 1,
+    "referenceRadiusMeters": 2575000,
+    "sourceRadiusMeters": 2575000,
+    "sourceProjection": "longlat",
+    "sourcePixelDegrees": 0.02197265625,
+    "sourceResolutionMeters": 1400,
+    "maxZoom": 6,
+    "sampleSize": 129,
+    "frame": "IAU_TITAN / Corlies 2017",
+    "verticalDatum": "Radial meters above 2575000 m sphere (Corlies et al., 2017)",
+    "credit": "Corlies et al. (2017) / Cassini RADAR / Cornell / USGS; reconstructed gaps",
+    "sourceUrl": "https://doi.org/10.1002/2017GL075518",
+    "cacheSubdirectory": "titan",
+    "coverageNotes": "Cassini 32 PPD altimetry/DTM/SARTopo measures 8.67% of spherical area; remaining terrain uses Corlies 2017 global interpolation plus conservative nomenclature-constrained landforms.",
+    "license": "Cite Corlies et al. (2017), doi:10.1002/2017GL075518"
   }
 }

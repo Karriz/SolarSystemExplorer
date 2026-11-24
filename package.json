@@ -115,7 +115,14 @@
     "callisto:build-terrain": "sh scripts/terrain-python.sh scripts/build-terrain.py --bodies callisto --offline --workers 4",
     "callisto:build-hillshade": "sh scripts/terrain-python.sh scripts/build-global-hillshade.py --bodies callisto --workers 4",
     "callisto:check-source": "sh scripts/terrain-python.sh scripts/check-callisto-source.py",
-    "callisto:check": "node scripts/check-callisto.mjs"
+    "callisto:check": "node scripts/check-callisto.mjs",
+    "titan:fetch": "python3 scripts/fetch-titan.py",
+    "titan:prepare": "sh scripts/terrain-python.sh scripts/build-titan.py",
+    "titan:build-color": "sh scripts/terrain-python.sh scripts/build-titan.py --color-only",
+    "titan:build-terrain": "sh scripts/terrain-python.sh scripts/build-terrain.py --bodies titan --offline --workers 4",
+    "titan:build-hillshade": "sh scripts/terrain-python.sh scripts/build-global-hillshade.py --bodies titan --workers 4",
+    "titan:check-source": "sh scripts/terrain-python.sh scripts/check-titan-source.py",
+    "titan:check": "node scripts/check-titan.mjs"
   },
   "dependencies": {
     "@jsquash/webp": "^1.5.0",

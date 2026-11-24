@@ -38,6 +38,7 @@ export default function App() {
   const [selected, setSelected] = useState<BodyId>('sun')
   const [showIntroduction, setShowIntroduction] = useState(true)
   const [venusSurfaceView, setVenusSurfaceView] = useState(false)
+  const [titanSurfaceView, setTitanSurfaceView] = useState(false)
   const [playing, setPlaying] = useState(false)
   const [speed, setSpeed] = useState(1)
   const [showOrbits, setShowOrbits] = useState(true)
@@ -196,6 +197,10 @@ export default function App() {
           <div className="terrain-options"><button aria-pressed={venusSurfaceView} onClick={() => { const reveal = !venusSurfaceView; sceneRef.current?.setAtmosphereVisible('venus', !reveal); setVenusSurfaceView(reveal) }}>{venusSurfaceView ? 'Show atmosphere and clouds' : 'Reveal surface'}</button></div>
           <div className="surface-source">{venusSurfaceView ? 'Scientific surface view · atmosphere and clouds hidden' : 'Visible-light model · the cloud deck obscures the surface'}</div>
         </div>}
+        {selected === 'titan' && <div className="terrain-controls">
+          <div className="terrain-options"><button aria-pressed={titanSurfaceView} onClick={() => { const reveal = !titanSurfaceView; sceneRef.current?.setAtmosphereVisible('titan', !reveal); setTitanSurfaceView(reveal) }}>{titanSurfaceView ? 'Show atmosphere and haze' : 'Reveal surface'}</button></div>
+          <div className="surface-source">{titanSurfaceView ? 'Scientific surface view · layered haze hidden' : 'Visible-light model · dense tholin haze obscures the surface'}</div>
+        </div>}
         {isGiantBody(selected) && <div className="surface-source">Atmosphere: modeled clouds and haze · illustrative motion<br /><a href={giantPlanetProfiles[selected].source} target="_blank" rel="noreferrer">NASA reference shape</a> · 1 bar level</div>}
         {selected === 'sun' && <div className="surface-source">Modeled <a href="https://science.nasa.gov/sun/facts/" target="_blank" rel="noreferrer">visible-light photosphere</a> and sunspots · corona and photographic glare enhanced for visibility</div>}
         {selected !== 'sun' && <div className="surface-source">Rotation: <a href={selected === 'earth' ? 'https://aa.usno.navy.mil/faq/GAST' : 'https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc'} target="_blank" rel="noreferrer">{selected === 'earth' ? 'USNO sidereal time' : 'JPL NAIF planetary constants'}</a> · approximate</div>}
@@ -206,7 +211,7 @@ export default function App() {
           {surfaceColorStatus?.message && <div role="status" className="surface-source">{surfaceColorStatus.message}</div>}
         </>}
         {selected !== 'earth' && !surfaceProfile && selected in surfaceTileSources && <div className="surface-source">Detail: <a href={surfaceTileSources[selected as TileBody].page} target="_blank" rel="noreferrer">{surfaceTileSources[selected as TileBody].label}</a> · {surfaceTileSources[selected as TileBody].credit}</div>}
-        {(selected === 'earth' || selected === 'mars' || selected === 'venus') && <div className="surface-source">Atmosphere: <a href={atmosphereProfiles[selected].source} target="_blank" rel="noreferrer">{selected === 'earth' ? 'Modeled clear air' : selected === 'mars' ? 'Modeled dust haze' : 'Modeled dense air and clouds'}</a> · {selected === 'venus' ? 'generated structure · illustrative motion' : 'fixed conditions'}</div>}
+        {(selected === 'earth' || selected === 'mars' || selected === 'venus' || selected === 'titan') && <div className="surface-source">Atmosphere: <a href={atmosphereProfiles[selected].source} target="_blank" rel="noreferrer">{selected === 'earth' ? 'Modeled clear air' : selected === 'mars' ? 'Modeled dust haze' : selected === 'titan' ? 'Modeled nitrogen air and layered haze' : 'Modeled dense air and clouds'}</a> · {selected === 'venus' || selected === 'titan' ? 'generated structure · illustrative motion' : 'fixed conditions'}</div>}
 
         {selected === 'earth' && <div className="terrain-controls">
           <div className="surface-source">Explore measured terrain</div>

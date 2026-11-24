@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "body": "titan",
+  "width": 4096,
+  "height": 2048,
+  "source": "Cassini ISS 938 nm global 4 km mosaic (PIA19658) plus IAU/USGS hydrocarbon sea/lake boundaries with inferred neutral-light ground colors",
+  "colorModel": "Explicit inferred neutral-light albedo (dirty water-ice highlands, dark organic dune fields, dark liquid hydrocarbon seas). Titan orange illumination is computed dynamically by the layered-haze atmosphere, not baked into surface reflectance.",
+  "issPercentiles": [
+    45.12095146179199,
+    133.0880889892578,
+    200.93186950683594
+  ],
+  "linearLuminanceRange": [
+    0.035999998450279236,
+    0.358193963766098
+  ],
+  "limitations": "No global measured visible RGB exists for Titan ground. Cassini ISS mosaic is 938 nm methane-window brightness, not visible color; Huygens DISR constrains local material darkness only and is not claimed as measured global RGB.",
+  "deliveredSha256": "8d45cd9052a48b902c5f59970596a9d9213993550ceecb12597c8db9b05cafc9",
+  "bytes": 3920272
+}

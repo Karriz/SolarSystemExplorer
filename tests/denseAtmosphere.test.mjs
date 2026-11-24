@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { Vector3 } from 'three'
 import { solveDenseColumn } from '../src/denseAtmosphere.ts'
-import { marsAtmosphere as mars, venusAtmosphere as venus } from '../src/atmosphereProfiles.ts'
+import { marsAtmosphere as mars, titanAtmosphere as titan, venusAtmosphere as venus } from '../src/atmosphereProfiles.ts'
 import { buildAtmosphereTables, integrateAtmosphere, mediumAt, sampleTable, transmissionToSpace, multiUv } from '../src/atmosphereOptics.ts'
 
 test('dense columns recover pure absorption and conserve a conservative reflecting slab', () => {
@@ -65,4 +65,18 @@ test('Venus diffuse field converges, conserves flux and produces diffuse warm gr
   const direct=transmissionToSpace(venus,venus.radiusKm,.7,2048)
   assert.ok(irradiance[0]>direct[0]*100,'surface illumination should be overwhelmingly diffuse')
   assert.ok(irradiance[0]>irradiance[2],'lower atmosphere should preferentially transmit warm light')
+})
+
+test('Titan layered haze conserves flux, obscures the surface from orbit and yields amber ground light', () => {
+  assert.equal(mediumAt(titan,54).cloudDensity,0);assert.equal(mediumAt(titan,246).cloudDensity,0)
+  assert.equal(mediumAt(titan,150).cloudDensity,1)
+  const t=buildAtmosphereTables(titan)
+  assert.equal(t.validation.accepted,true)
+  assert.ok(t.validation.maxEnergyError<.00001)
+  assert.ok(t.validation.maxResidual<2e-6)
+  for(const data of [t.multiple,t.irradiance]) assert.ok(data.every(v=>Number.isFinite(v)&&v>=0))
+  const direct=transmissionToSpace(titan,titan.radiusKm,1,2048)
+  assert.ok(direct[0]<.02 && direct[2]<.001,'tholin haze must obscure the surface from orbit')
+  const irradiance=sampleTable(t.irradiance,t.multiWidth,t.multiHeight,...multiUv(titan,titan.radiusKm,.7))
+  assert.ok(irradiance[0]>irradiance[1]*3 && irradiance[1]>irradiance[2]*10,'ground light must be strongly amber-orange')
 })

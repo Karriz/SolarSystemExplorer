@@ -4,7 +4,7 @@ import { SolarRenderer } from './SolarRenderer.ts'
 import type { GiantBody } from './giantPlanetProfiles.ts'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { AtmosphereRenderer, type AtmosphereFrame } from './AtmosphereRenderer.ts'
-import { marsAtmosphere, venusAtmosphere, type AtmosphereBody } from './atmosphereProfiles.ts'
+import { marsAtmosphere, titanAtmosphere, venusAtmosphere, type AtmosphereBody } from './atmosphereProfiles.ts'
 
 const TARGET_BUDGET = 80 * 1024 * 1024
 
@@ -16,8 +16,8 @@ export class AtmosphereRenderPipeline {
   solar?: SolarRenderer
   private appearanceSun?: THREE.Mesh
   readonly atmosphere = new AtmosphereRenderer()
-  readonly atmospheres = { earth: this.atmosphere, mars: new AtmosphereRenderer(marsAtmosphere), venus: new AtmosphereRenderer(venusAtmosphere) }
-  private readonly compositionOrder = { value: new THREE.Vector3(0, 1, 2) }
+  readonly atmospheres = { earth: this.atmosphere, mars: new AtmosphereRenderer(marsAtmosphere), venus: new AtmosphereRenderer(venusAtmosphere), titan: new AtmosphereRenderer(titanAtmosphere) }
+  private readonly compositionOrder = { value: new THREE.Vector4(0, 1, 2, 3) }
   private readonly renderer: THREE.WebGLRenderer
   private readonly output = new OutputPass()
   private readonly size = new THREE.Vector2()
@@ -55,16 +55,18 @@ export class AtmosphereRenderPipeline {
       .replace(/}\s*$/, 'gl_FragColor.rgb *= gl_FragColor.a;\n}')
     const compose = [this.atmosphere.configureOutput(this.output.material),
       this.atmospheres.mars.configureOutput(this.output.material, 'mars_'),
-      this.atmospheres.venus.configureOutput(this.output.material, 'venus_')]
+      this.atmospheres.venus.configureOutput(this.output.material, 'venus_'),
+      this.atmospheres.titan.configureOutput(this.output.material, 'titan_')]
     this.output.material.uniforms.atmosphereOrder = this.compositionOrder
     this.output.material.fragmentShader = this.output.material.fragmentShader
-      .replace('void main() {', `uniform vec3 atmosphereOrder;
+      .replace('void main() {', `uniform vec4 atmosphereOrder;
         vec4 composeAtmospheres(vec2 uv, vec4 color) {
-          for(int i=0;i<3;i++) {
+          for(int i=0;i<4;i++) {
             float body=atmosphereOrder[i];
             if(body<0.5) color=${compose[0]}(uv,color);
             else if(body<1.5) color=${compose[1]}(uv,color);
-            else color=${compose[2]}(uv,color);
+            else if(body<2.5) color=${compose[2]}(uv,color);
+            else color=${compose[3]}(uv,color);
           }
           return color;
         }
@@ -123,14 +125,14 @@ export class AtmosphereRenderPipeline {
       this.giants.forEach(giant => giant.update(camera, date, this.appearanceSun!.position))
       this.solar?.update(camera, this.target?.depthTexture ?? null, this.renderer.getSize(this.viewport))
     }
-    const ids: AtmosphereBody[] = ['earth', 'mars', 'venus']
+    const ids: AtmosphereBody[] = ['earth', 'mars', 'venus', 'titan']
     for (const id of ids) {
       const frame = frames.find(frame => (frame.id ?? 'earth') === id)
       this.atmospheres[id].update(camera, this.target?.depthTexture ?? null, frame ? { ...frame, stars: undefined } : undefined)
     }
     const order = ids.map((id, index) => ({ index, distance: frames.find(frame => (frame.id ?? 'earth') === id)?.body.position.distanceToSquared(camera.position) ?? 0 }))
       .sort((a, b) => b.distance - a.distance)
-    this.compositionOrder.value.set(order[0].index, order[1].index, order[2].index)
+    this.compositionOrder.value.set(order[0].index, order[1].index, order[2].index, order[3].index)
     const stars = frames.find(frame => frame.stars)?.stars
     if (stars) stars.material.opacity = stars.opacity * Math.min(...ids.map(id => this.atmospheres[id].metrics().starVisibility))
     const renderer = this.renderer, previous = renderer.getRenderTarget()

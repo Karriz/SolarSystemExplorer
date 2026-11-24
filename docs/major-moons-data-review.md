@@ -2,7 +2,7 @@
 
 Reviewed November 15, 2026. Scope: Io, Europa, Ganymede, Callisto, Titan and
 Enceladus. This document records the source review and implementation direction.
-Enceladus, Io, Europa, Ganymede and Callisto have since been implemented; see their [Enceladus](enceladus-surface.md), [Io](io-surface.md), [Europa](europa-surface.md), [Ganymede](ganymede-surface.md) and [Callisto](callisto-surface.md) source, rendering and validation notes.
+All six moons (Enceladus, Io, Europa, Ganymede, Callisto and Titan) have since been implemented; see their [Enceladus](enceladus-surface.md), [Io](io-surface.md), [Europa](europa-surface.md), [Ganymede](ganymede-surface.md), [Callisto](callisto-surface.md) and [Titan](titan-surface.md) source, rendering and validation notes.
 
 ## Recommendation
 

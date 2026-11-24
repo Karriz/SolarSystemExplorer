@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "body": "titan",
+  "referenceRadiusMeters": 2575000,
+  "referenceFigure": "2,575.0 km Corlies (2017) spherical datum (Corlies heights include Titan physical flattening/geoid relief; NAIF pck00011 BODY606 radii 2575.15/2574.78/2574.47 km)",
+  "width": 16384,
+  "height": 8192,
+  "minHeightMeters": -1992.21630859375,
+  "maxHeightMeters": 1125.936767578125,
+  "measuredElevationFraction": 0.08668693757243119,
+  "measuredPixelCounts32PPD": {
+    "sar": 3966869,
+    "dtm": 2558488,
+    "alt": 917350
+  },
+  "coverageMeaning": "Combined Cassini RADAR altimetry, stereo DTM, and SARTopo 32 PPD measurements from Corlies et al. (2017) (~8.67% of spherical area)",
+  "preparedSha256": "4c895965fae0ba4fa4c33fe181a11d38fb536424022d69135c101b7c1beb53b0",
+  "gapFill": "Corlies et al. (2017) 4 PPD global interpolated topography preserved globally; authoritative 32 PPD tracks preserved in interior; conservative seed 606 Titan dunes, icy ridges, eroded craters, and flat seas/lakes applied only in unmeasured gaps",
+  "seed": 606,
+  "sourceFiles": [
+    {
+      "file": "corlies2017.zip",
+      "url": "https://data.astro.cornell.edu/titan_topo_corlies/titan_topo_corlies.zip",
+      "bytes": 27504153,
+      "sha256": "b398841e75c879240d4aaeabf3156478fcc2ef1342d449b36975644380ad2659"
+    },
+    {
+      "file": "global-iss-4km.tif",
+      "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Titan_ISS_P19658_Mosaic_Global_4km.tif",
+      "bytes": 8169529,
+      "sha256": "ca0fe5f6f9bdba1b6d03245969a42336a010ddc17d636e5e06fffa939d10ca83"
+    },
+    {
+      "file": "global-iss-4km.lbl",
+      "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Titan_ISS_P19658_Mosaic_Global_4km_pds3.lbl",
+      "bytes": 2575,
+      "sha256": "20385defdfba31e6be29b279d663d7d6ea4584e4e073f072185f7bd96f3d5673"
+    },
+    {
+      "file": "nomenclature.zip",
+      "url": "https://asc-planetarynames-data.s3.us-west-2.amazonaws.com/TITAN_nomenclature_center_pts.zip",
+      "bytes": 833929,
+      "sha256": "1ce72a3872f48ffd19427aae11fde9f64e9a38049a4bb0792386a3208837a731"
+    },
+    {
+      "file": "nomenclature-geoms.zip",
+      "url": "https://asc-planetarynames-data.s3.us-west-2.amazonaws.com/TITAN_nomenclature_geometries.zip",
+      "bytes": 949874,
+      "sha256": "054a188f077dc1629cbe88c5f37841463dd45a1bbfb987441bbe4878473ac33c"
+    }
+  ]
+}

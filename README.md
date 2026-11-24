@@ -13,6 +13,13 @@ Run `npm run camera:check` against Vite on port 5175 (or set `CAMERA_PREVIEW_URL
 
 ## Terrain and material pilot
 
+[Titan](docs/titan-surface.md) is available beneath Saturn with a dedicated
+layered nitrogen-tholin haze atmosphere, Corlies et al. (2017) radar topography
+(8.67% measured 32 PPD tracks over 4 PPD global interpolation plus conservative
+gap landforms), inferred neutral-light ground color (hydrocarbon seas, organic
+dunes and icy highlands), and a **Reveal surface** toggle. Rebuild with
+`titan:fetch`, `titan:prepare`, `titan:build-terrain` and `titan:build-hillshade`.
+
 [Callisto](docs/callisto-surface.md) is available beneath Jupiter with complete
 nomenclature-constrained cratered terrain and reconstructed visible color.
 IAU/USGS multi-ring basins (Valhalla, Asgard, Adlinda, Utgard), 141 named

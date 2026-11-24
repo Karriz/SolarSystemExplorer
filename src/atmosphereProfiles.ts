@@ -1,5 +1,5 @@
 export type OpticalRgb = readonly [number, number, number]
-export type AtmosphereBody = 'earth' | 'mars' | 'venus'
+export type AtmosphereBody = 'earth' | 'mars' | 'venus' | 'titan'
 export type CloudProfile = {
   baseKm: number; topKm: number; edgeKm: number
   extinction: number; albedo: OpticalRgb; g: number
@@ -70,4 +70,20 @@ export const venusAtmosphere: AtmosphereProfile = {
   source: 'https://doi.org/10.1002/2016JE005087',
   description: 'Modeled dense air and clouds · generated structure and illustrative motion',
 }
-export const atmosphereProfiles = { earth: earthAtmosphere, mars: marsAtmosphere, venus: venusAtmosphere }
+
+/** Titan layered nitrogen-and-tholin haze reference constrained by Huygens
+ * HASI/DISR structure. Strong blue tholin absorption produces Titan's golden-
+ * orange orbital appearance, bluish upper Rayleigh limb and amber ground light. */
+export const titanAtmosphere: AtmosphereProfile = {
+  id: 'titan', radiusKm: 2575, heightKm: 360, model: 'dense-transport',
+  rayleigh: [.0045, .0105, .026], rayleighScaleKm: 40,
+  aerosolScattering: [.014, .0105, .005], aerosolAbsorption: [.0009, .0028, .0085],
+  aerosolScaleKm: 45, aerosolG: .68,
+  ozoneAbsorption: [0, 0, 0], ozoneCenterKm: 25, ozoneWidthKm: 15,
+  groundAlbedo: .12, sunAngularRadius: .00049,
+  clouds: { baseKm: 55, topKm: 245, edgeKm: 36, extinction: .076,
+    albedo: [.968, .895, .64], g: .68, radiansPerDay: .45, variation: .03 },
+  source: 'https://pdsatmospheres.nmsu.edu/data_and_services/atmospheres_data/Huygens/DISR.html',
+  description: 'Modeled nitrogen air and layered tholin haze · Huygens-constrained optics',
+}
+export const atmosphereProfiles = { earth: earthAtmosphere, mars: marsAtmosphere, venus: venusAtmosphere, titan: titanAtmosphere }

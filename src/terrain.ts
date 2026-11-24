@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import type { TileAddress, TileBounds } from './surfaceTiles.ts'
 
-export const terrainBodies = ['moon', 'mars', 'mercury', 'venus', 'enceladus', 'io', 'europa', 'ganymede', 'callisto'] as const
+export const terrainBodies = ['moon', 'mars', 'mercury', 'venus', 'enceladus', 'titan', 'io', 'europa', 'ganymede', 'callisto'] as const
 export type TerrainBody = typeof terrainBodies[number]
 export function isTerrainBody(id: string): id is TerrainBody { return terrainBodies.some(body => body === id) }
 const adapters: Record<TerrainBody, { radius: number; scale: number; frame: string }> = {
@@ -10,6 +10,7 @@ const adapters: Record<TerrainBody, { radius: number; scale: number; frame: stri
   mercury: { radius: 2439400, scale: .5, frame: 'MESSENGER MDIS body-fixed' },
   venus: { radius: 6051000, scale: 1, frame: 'Magellan body-fixed' },
   enceladus: { radius: 252100, scale: 1, frame: 'IAU_ENCELADUS / Schenk 2024' },
+  titan: { radius: 2575000, scale: 1, frame: 'IAU_TITAN / Corlies 2017' },
   europa: { radius: 1560800, scale: 1, frame: 'IAU_EUROPA / USGS controlled 2021' },
   ganymede: { radius: 2631200, scale: 1, frame: 'IAU_GANYMEDE / SIM 3237 constrained' },
   callisto: { radius: 2410300, scale: 1, frame: 'IAU_CALLISTO / Nomenclature constrained' },
@@ -42,7 +43,7 @@ export function parseTerrainManifest(value: unknown): TerrainManifest {
     || m.referenceRadiusMeters !== adapters[m.body].radius || m.scaleMeters !== adapters[m.body].scale
     || m.frame !== adapters[m.body].frame || m.longitude !== 'east-positive-minus180-to180' || m.rowOrder !== 'north-to-south'
     || m.offsetMeters !== 0 || m.tileUrl !== 'tiles/{z}/{x}/{y}.bin'
-    || (m.sampleSize !== 65 && !(m.schema === 2 && (m.body === 'moon' || m.body === 'mars' || m.body === 'enceladus' || m.body === 'io' || m.body === 'europa' || m.body === 'ganymede' || m.body === 'callisto') && m.sampleSize === 129)) || !Number.isInteger(m.maxZoom) || m.maxZoom < 0 || m.maxZoom > (m.body === 'mars' ? 9 : 8)
+    || (m.sampleSize !== 65 && !(m.schema === 2 && (m.body === 'moon' || m.body === 'mars' || m.body === 'enceladus' || m.body === 'titan' || m.body === 'io' || m.body === 'europa' || m.body === 'ganymede' || m.body === 'callisto') && m.sampleSize === 129)) || !Number.isInteger(m.maxZoom) || m.maxZoom < 0 || m.maxZoom > (m.body === 'mars' ? 9 : 8)
     || !Number.isFinite(m.minHeightMeters) || !Number.isFinite(m.maxHeightMeters)
     || m.minHeightMeters < -32767 * m.scaleMeters || m.maxHeightMeters > 32767 * m.scaleMeters || m.minHeightMeters > m.maxHeightMeters
     || !m.tiles || typeof m.credit !== 'string' || typeof m.sourceUrl !== 'string'

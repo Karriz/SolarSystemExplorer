@@ -12,6 +12,7 @@ import { loadSurfaceDetail } from './surfaceAssets.ts'
 import { configureAtmosphericLighting } from './atmosphericLighting.ts'
 import type { AtmosphericLighting } from './AtmosphereRenderer.ts'
 import { atmosphereProfiles } from './atmosphereProfiles.ts'
+import { configureLiquidSurfaceMaterial, liquidMaterialState, loadLiquidMask, type LiquidMaterialState } from './liquidSurfaceMaterial.ts'
 
 export type SurfaceColorMode = 'loading' | 'compact' | 'original' | 'unavailable'
 export type SurfaceColorStatus = { mode: SurfaceColorMode; message: string }
@@ -24,6 +25,7 @@ export class PlanetSurfaceRenderer {
   readonly color: PlanetColorTexture
   private readonly shade: PlanetShade
   private readonly material: THREE.MeshStandardMaterial
+  private readonly liquid?: LiquidMaterialState
   private disposed = false
   private started = false
   private colorMode: SurfaceColorMode = 'loading'
@@ -47,7 +49,7 @@ export class PlanetSurfaceRenderer {
     this.renderer = renderer
     this.hillshadeEnabled = hillshadeEnabled
     this.onColorStatus = onColorStatus
-    const profile = planetRenderProfiles[id]
+    const profile: SolidSurfaceProfile = planetRenderProfiles[id]
     this.material = body.material as THREE.MeshStandardMaterial
     state.colorSharpen.value = 0
     state.detail.value = profile.generatedDetail ? 1 : 0
@@ -57,13 +59,17 @@ export class PlanetSurfaceRenderer {
       true, undefined, undefined, profile.detail)
     if (profile.cubeColorSampling) configureCubeColorMaterial(this.material)
     configureTerrainHillshade(this.material, hillshadeEnabled, this.hillshade)
-    const air = id === 'mars' || id === 'venus' ? atmosphereProfiles[id] : undefined
+    if (profile.liquid) {
+      this.liquid = liquidMaterialState()
+      configureLiquidSurfaceMaterial(this.material, this.liquid, profile.liquid)
+    }
+    const air = id === 'mars' || id === 'venus' || id === 'titan' ? atmosphereProfiles[id] : undefined
     if (air && atmosphericLighting) configureAtmosphericLighting(this.material, atmosphericLighting, true, air)
     body.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })
     configurePlanetSurfaceMaterial(body.customDepthMaterial, state, 149_597_870_700,
       true, undefined, this.shade.camera, profile.detail)
     this.terrain = new CubeTerrainLayer(body, onTerrainStatus, terrainUrl, state,
-      hillshadeEnabled, id, this.hillshade, profile, air && atmosphericLighting ? { state: atmosphericLighting, profile: air } : undefined)
+      hillshadeEnabled, id, this.hillshade, profile, air && atmosphericLighting ? { state: atmosphericLighting, profile: air } : undefined, this.liquid)
   }
 
   private async loadColor() {
@@ -105,7 +111,9 @@ export class PlanetSurfaceRenderer {
       this.onColorStatus(this.id, { mode: 'loading', message: 'Loading surface color…' })
       void this.loadColor()
       this.loadDetail()
+      if (this.liquid) loadLiquidMask(this.id, this.liquid, this.renderer, () => this.disposed)
     }
+    if (this.liquid) this.liquid.time.value = now / 1000
     this.body.updateWorldMatrix(true, false)
     this.shade.camera.value.copy(this.body.worldToLocal(camera.position.clone()))
     this.terrain.updateShadeCamera(camera)
@@ -132,6 +140,11 @@ export class PlanetSurfaceRenderer {
       layer.map.value?.dispose()
       layer.map.value = null
       layer.ready.value = 0
+    }
+    if (this.liquid) {
+      this.liquid.mask.value?.dispose()
+      this.liquid.mask.value = null
+      this.liquid.ready.value = 0
     }
   }
 }

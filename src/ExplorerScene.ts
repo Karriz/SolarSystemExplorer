@@ -35,14 +35,14 @@ function makeTexture(id: BodyId): THREE.CanvasTexture {
   canvas.width = 512
   canvas.height = 256
   const ctx = canvas.getContext('2d')!
-  const color = id === 'venus' ? '#575552' : bodyInfo[id].color
+  const color = id === 'venus' || id === 'titan' ? '#575552' : bodyInfo[id].color
   ctx.fillStyle = color
   ctx.fillRect(0, 0, 512, 256)
   let seed = id.split('').reduce((a, c) => a + c.charCodeAt(0), 1)
   const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296 }
 
-  if (id === 'venus') {
-    // Neutral inferred basalt remains valid while color assets load or are offline.
+  if (id === 'venus' || id === 'titan') {
+    // Neutral inferred surface remains valid while color assets load or are offline.
   } else if (id === 'earth') {
     ctx.fillStyle = '#2c6c9f'
     ctx.fillRect(0, 0, 512, 256)
@@ -115,10 +115,11 @@ export class ExplorerScene {
   private planetSurfaces = new Map<SolidSurfaceBody, PlanetSurfaceRenderer>()
   private terrainHillshade = { value: 1 }
   private venusHillshade = { value: 0 }
+  private titanHillshade = { value: 0 }
   private disposed = false
   private surfaceTiles: GlobeTileLayer
   private terrain = new Map<TerrainBody, GlobeTerrainLayer | CubeTerrainLayer>()
-  private surfaces = { earth: surfaceState(), moon: surfaceState(), mars: surfaceState(), mercury: surfaceState(), venus: surfaceState(), enceladus: surfaceState(), io: surfaceState(), europa: surfaceState(), ganymede: surfaceState(), callisto: surfaceState() }
+  private surfaces = { earth: surfaceState(), moon: surfaceState(), mars: surfaceState(), mercury: surfaceState(), venus: surfaceState(), enceladus: surfaceState(), titan: surfaceState(), io: surfaceState(), europa: surfaceState(), ganymede: surfaceState(), callisto: surfaceState() }
   private regional = new Map<'earth' | 'moon', RegionalTerrainLayer>()
   private pilotMetricsKey = ''
   private onPilotStatus?: (body: 'earth' | 'moon', metrics: RegionalMetrics) => void
@@ -186,8 +187,8 @@ export class ExplorerScene {
     for (const id of terrainBodies) {
       if (isSolidSurfaceBody(id)) {
         const surface = new PlanetSurfaceRenderer(id, this.bodies.get(id)!, this.surfaces[id],
-          this.renderer, terrainUrl, id === 'venus' ? this.venusHillshade : this.terrainHillshade, onTerrainStatus, onColorStatus,
-          id === 'mars' || id === 'venus' ? this.renderPipeline.atmospheres[id].lighting : undefined)
+          this.renderer, terrainUrl, id === 'venus' ? this.venusHillshade : id === 'titan' ? this.titanHillshade : this.terrainHillshade, onTerrainStatus, onColorStatus,
+          id === 'mars' || id === 'venus' || id === 'titan' ? this.renderPipeline.atmospheres[id].lighting : undefined)
         this.planetSurfaces.set(id, surface)
         this.terrain.set(id, surface.terrain)
       } else {
@@ -343,13 +344,21 @@ export class ExplorerScene {
   setAtmosphereVisible(body: AtmosphereBody, visible: boolean) {
     this.renderPipeline.atmospheres[body].enabled = visible
     if (body === 'venus') this.venusHillshade.value = visible ? 0 : 1
+    if (body === 'titan') this.titanHillshade.value = visible ? 0 : 1
   }
 
   private surfaceSelected(id: BodyId) {
     if (id !== this.selected) return false
-    // Hidden terrain does not need to stream behind an opaque cloud deck.
-    return id !== 'venus' || !this.renderPipeline.atmospheres.venus.enabled
-      || this.camera.position.distanceTo(this.bodies.get('venus')!.position) * 149_597_870_700 - bodyInfo.venus.radiusKm * 1000 < 100000
+    // Hidden terrain does not need to stream behind an opaque cloud or haze deck.
+    if (id === 'venus') {
+      return !this.renderPipeline.atmospheres.venus.enabled
+        || this.camera.position.distanceTo(this.bodies.get('venus')!.position) * 149_597_870_700 - bodyInfo.venus.radiusKm * 1000 < 100000
+    }
+    if (id === 'titan') {
+      return !this.renderPipeline.atmospheres.titan.enabled
+        || this.camera.position.distanceTo(this.bodies.get('titan')!.position) * 149_597_870_700 - bodyInfo.titan.radiusKm * 1000 < 280000
+    }
+    return true
   }
   private terrainShadows = true
   private bodyTerrainShadows = new Map<BodyId, boolean>()
@@ -391,7 +400,7 @@ export class ExplorerScene {
     this.selected = id
     this.origin.copy(vector(id, this.date))
     this.focusDirection = null
-    if (id === 'earth' || id === 'enceladus' || id === 'io' || id === 'europa' || id === 'ganymede' || id === 'callisto' || isGiantBody(id)) {
+    if (id === 'earth' || id === 'enceladus' || id === 'titan' || id === 'io' || id === 'europa' || id === 'ganymede' || id === 'callisto' || isGiantBody(id)) {
       // Show the illuminated hemisphere and terminator on initial focus.
       const towardSun = vector('sun', this.date).sub(vector(id, this.date)).normalize()
       const current = this.camera.position.clone().sub(this.controls.target).normalize()
@@ -556,7 +565,7 @@ export class ExplorerScene {
   }
 
   private renderFrame() {
-    this.renderPipeline.render(this.scene, this.camera, (['earth', 'mars', 'venus'] as const).map(id => ({
+    this.renderPipeline.render(this.scene, this.camera, (['earth', 'mars', 'venus', 'titan'] as const).map(id => ({
       id, date: this.date, body: this.bodies.get(id)!, sun: this.bodies.get('sun')!.position, solarColor: this.sunLight.color,
       stars: { material: this.stars.material as THREE.PointsMaterial, opacity: .72 },
     })), this.date)

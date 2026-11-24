@@ -1,5 +1,6 @@
 import type { BodyId } from './ephemeris'
-import { MARS_DETAIL_PROFILE, MOON_DETAIL_PROFILE, MERCURY_DETAIL_PROFILE, VENUS_DETAIL_PROFILE, ENCELADUS_DETAIL_PROFILE, IO_DETAIL_PROFILE, EUROPA_DETAIL_PROFILE, GANYMEDE_DETAIL_PROFILE, CALLISTO_DETAIL_PROFILE, type SurfaceDetailProfile } from './planetSurfaceMaterial.ts'
+import { MARS_DETAIL_PROFILE, MOON_DETAIL_PROFILE, MERCURY_DETAIL_PROFILE, VENUS_DETAIL_PROFILE, ENCELADUS_DETAIL_PROFILE, TITAN_DETAIL_PROFILE, IO_DETAIL_PROFILE, EUROPA_DETAIL_PROFILE, GANYMEDE_DETAIL_PROFILE, CALLISTO_DETAIL_PROFILE, type SurfaceDetailProfile } from './planetSurfaceMaterial.ts'
+import type { LiquidSurfaceProfile } from './liquidSurfaceMaterial.ts'
 
 export type SolidSurfaceProfile = {
   id: BodyId
@@ -15,9 +16,19 @@ export type SolidSurfaceProfile = {
   /** Reference figure in body-local X, north Y, west Z order. */
   referenceAxesMeters?: readonly [number, number, number]
   terrainDescription?: string
+  liquid?: LiquidSurfaceProfile
 }
 
 export const planetRenderProfiles = {
+  titan: {
+    id: 'titan', generatedDetail: true, originalColorWidth: 4096,
+    detail: TITAN_DETAIL_PROFILE, cubeColorSampling: true,
+    liquid: { color: [0.018, 0.023, 0.030], roughness: 0.14, waveStrength: 0.014 },
+    fallbackColor: { file: 'titan-color-reference.png', message: 'Compact color unavailable · showing inferred Titan ground reference' },
+    colorSource: { url: 'https://astrogeology.usgs.gov/search/map/titan_cassini_iss_global_mosaic_4005m', label: 'Cassini ISS 938 nm geography with inferred neutral-light ground color', credit: 'NASA / JPL-Caltech / SSI / USGS; inferred ground albedo' },
+    colorDescription: 'Ground beneath the haze: inferred neutral-light icy highlands, dark organic dunes and dark hydrocarbon seas from Cassini ISS 938 nm geography, not measured global visible RGB. Orange illumination is modeled separately in the atmosphere. Corlies et al. (2017) radar measurements support 8.67% of terrain; gaps use interpolation and conservative reconstructed landforms.',
+    terrainDescription: 'Corlies (2017) measured tracks (8.67%) and interpolated/reconstructed global terrain',
+  },
   callisto: {
     id: 'callisto', generatedDetail: true, originalColorWidth: 4096,
     detail: CALLISTO_DETAIL_PROFILE, cubeColorSampling: true,
