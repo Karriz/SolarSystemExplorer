@@ -1,5 +1,5 @@
 import type { BodyId } from './ephemeris'
-import { MARS_DETAIL_PROFILE, MOON_DETAIL_PROFILE, MERCURY_DETAIL_PROFILE, VENUS_DETAIL_PROFILE, ENCELADUS_DETAIL_PROFILE, IO_DETAIL_PROFILE, EUROPA_DETAIL_PROFILE, type SurfaceDetailProfile } from './planetSurfaceMaterial.ts'
+import { MARS_DETAIL_PROFILE, MOON_DETAIL_PROFILE, MERCURY_DETAIL_PROFILE, VENUS_DETAIL_PROFILE, ENCELADUS_DETAIL_PROFILE, IO_DETAIL_PROFILE, EUROPA_DETAIL_PROFILE, GANYMEDE_DETAIL_PROFILE, CALLISTO_DETAIL_PROFILE, type SurfaceDetailProfile } from './planetSurfaceMaterial.ts'
 
 export type SolidSurfaceProfile = {
   id: BodyId
@@ -18,6 +18,22 @@ export type SolidSurfaceProfile = {
 }
 
 export const planetRenderProfiles = {
+  callisto: {
+    id: 'callisto', generatedDetail: true, originalColorWidth: 4096,
+    detail: CALLISTO_DETAIL_PROFILE, cubeColorSampling: true,
+    fallbackColor: { file: 'callisto-color-reference.png', message: 'Compact color unavailable · showing reconstructed Callisto reference' },
+    colorSource: { url: 'https://astrogeology.usgs.gov/search/map/callisto_galileo_voyager_global_mosaic_1km', label: 'Voyager/Galileo-informed visible color reconstruction', credit: 'NASA / USGS; reconstructed visible RGB' },
+    colorDescription: 'Voyager/Galileo monochrome geography with Galileo PIA03456-anchored brownish-gray non-ice lag and bright icy impact scars. Global terrain is reconstructed from IAU/USGS named basins, craters and catenae without a global measured DEM. Fine surface detail is generated.',
+    terrainDescription: 'IAU/USGS nomenclature-constrained global terrain · no measured global DEM',
+  },
+  ganymede: {
+    id: 'ganymede', generatedDetail: true, originalColorWidth: 4096,
+    detail: GANYMEDE_DETAIL_PROFILE, cubeColorSampling: true,
+    fallbackColor: { file: 'ganymede-color-reference.png', message: 'Compact color unavailable · showing reconstructed Ganymede reference' },
+    colorSource: { url: 'https://astrogeology.usgs.gov/search/map/ganymede_voyager_galileo_ssi_color_global_mosaic_1_4km', label: 'Voyager/Galileo-informed visible color reconstruction', credit: 'NASA / USGS; reconstructed visible RGB' },
+    colorDescription: 'Voyager/Galileo monochrome geography and visible green/violet cues with Galileo-anchored visible color; polar chroma is inferred. Global terrain is geologically constrained by USGS SIM 3237 without a global measured DEM. Fine surface detail is generated.',
+    terrainDescription: 'SIM 3237 geologically constrained global terrain · no measured global DEM',
+  },
   europa: {
     id: 'europa', generatedDetail: true, originalColorWidth: 4096,
     detail: EUROPA_DETAIL_PROFILE, cubeColorSampling: true,

@@ -2,7 +2,7 @@
 
 Reviewed November 15, 2026. Scope: Io, Europa, Ganymede, Callisto, Titan and
 Enceladus. This document records the source review and implementation direction.
-Enceladus, Io and Europa have since been implemented; see their [Enceladus](enceladus-surface.md) [Io](io-surface.md) and [Europa](europa-surface.md) source, rendering and validation notes.
+Enceladus, Io, Europa, Ganymede and Callisto have since been implemented; see their [Enceladus](enceladus-surface.md), [Io](io-surface.md), [Europa](europa-surface.md), [Ganymede](ganymede-surface.md) and [Callisto](callisto-surface.md) source, rendering and validation notes.
 
 ## Recommendation
 

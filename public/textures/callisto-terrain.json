@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "body": "callisto",
+  "referenceRadiusMeters": 2410300,
+  "referenceFigure": "IAU 2015 sphere (2,410.3 km; NAIF pck00011 BODY504_RADII)",
+  "width": 16384,
+  "height": 8192,
+  "minHeightMeters": -1411.7884521484375,
+  "maxHeightMeters": 859.9810180664062,
+  "measuredElevationFraction": 0.0,
+  "namedFeatureConstrainedFraction": 0.13597903619702742,
+  "coverageMeaning": "IAU/USGS named feature constraint footprints (Valhalla, Asgard, Adlinda, Utgard, 141 named craters, 8 catenae); 0% measured global stereo DEM",
+  "preparedSha256": "b5efdbd9113f289fd58d756bfe7448a63191d6a6ae67efe1d88a3619e55e2040",
+  "gapFill": "Seed 504 global reconstruction constrained by IAU/USGS Callisto nomenclature (4 multi-ring basins, 141 craters, 8 catenae) plus heavily cratered ancient plains calibrated to Bray & Schenk (2024) icy-crater morphometry",
+  "seed": 504,
+  "sourceFiles": [
+    {
+      "file": "global-mono.tif",
+      "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Callisto_Voyager_GalileoSSI_global_mosaic_1km.tif",
+      "bytes": 114640717,
+      "sha256": "e1f0bd2e0e05de605d067d6b5f5ededddaf31ca6c064562a1ca770f15a7dbaa3"
+    },
+    {
+      "file": "global-mono.lbl",
+      "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Callisto_Voyager_GalileoSSI_global_mosaic_1km_pds3.lbl",
+      "bytes": 2261,
+      "sha256": "c55d0ca71d29b669ac5451c2d065f5db83cddf738198d463f6c5296f2550ca1c"
+    },
+    {
+      "file": "nomenclature.zip",
+      "url": "https://asc-planetarynames-data.s3.us-west-2.amazonaws.com/CALLISTO_nomenclature_center_pts.zip",
+      "bytes": 440686,
+      "sha256": "ed09645787d2d2cc6eecf7d1179b2d263d4e524d89fd26639a84e12cd910e8b5"
+    },
+    {
+      "file": "nomenclature-geoms.zip",
+      "url": "https://asc-planetarynames-data.s3.us-west-2.amazonaws.com/CALLISTO_nomenclature_geometries_internal.zip",
+      "bytes": 529696,
+      "sha256": "4ef1526473cb0b0f9e99e1dbfd360377602868044be7d7611119cb9a8ea1b075"
+    },
+    {
+      "file": "natural-color.jpg",
+      "url": "https://assets.science.nasa.gov/content/dam/science/psd/photojournal/pia/pia03/pia03456/PIA03456.jpg",
+      "bytes": 73687,
+      "sha256": "a9e532314a8f1e5097c724ca2e29844087790124de349a1021ecb8f77c37398d"
+    }
+  ]
+}

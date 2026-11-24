@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "body": "ganymede",
+  "width": 4096,
+  "height": 2048,
+  "source": "USGS 1 km Voyager/Galileo monochrome mosaic plus 559/413 nm visible chroma cue from 1.435 km mosaic",
+  "naturalColorReference": "NASA/JPL PIA00716 Galileo natural-color global view; appearance constraint, not a calibrated global RGB product",
+  "colorModel": "Calibrated monochrome albedo mapped to brownish-gray dark regolith, pale ivory grooved ice, cool bright ray craters and subtle polar frost caps, modulated by smooth G/V spectral variation away from monochrome polar fill",
+  "monoPercentiles": [
+    0.2580834835767746,
+    0.4539451152086258,
+    0.7025822997093201
+  ],
+  "linearLuminanceRange": [
+    0.09263591468334198,
+    0.8865622282028198
+  ],
+  "limitations": "Reconstructed visible color, not calibrated global three-band RGB. Source lighting remains partly baked into Voyager/Galileo mosaics. Polar chroma above ~60 deg is inferred due to monochrome polar fill in the USGS color mosaic.",
+  "deliveredSha256": "d6ff4f954a19f29498ae40b1e7f5b2cd7425b05e347b1b98b4b835ab49833f51",
+  "bytes": 6547694
+}

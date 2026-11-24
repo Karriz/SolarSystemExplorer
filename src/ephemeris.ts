@@ -1,6 +1,6 @@
 // JPL approximate planetary elements, valid 1800–2050. Units: AU and degrees.
 // Source: https://ssd.jpl.nasa.gov/planets/approx_pos.html
-export type BodyId = 'sun' | 'mercury' | 'venus' | 'earth' | 'moon' | 'mars' | 'jupiter' | 'io' | 'europa' | 'saturn' | 'enceladus' | 'uranus' | 'neptune'
+export type BodyId = 'sun' | 'mercury' | 'venus' | 'earth' | 'moon' | 'mars' | 'jupiter' | 'io' | 'europa' | 'ganymede' | 'callisto' | 'saturn' | 'enceladus' | 'uranus' | 'neptune'
 export type Vec3 = { x: number; y: number; z: number }
 type Elements = { base: number[]; rate: number[] }
 
@@ -16,15 +16,17 @@ export const bodyInfo: Record<BodyId, { name: string; kind: string; radiusKm: nu
   jupiter: { name: 'Jupiter', kind: 'GAS GIANT', radiusKm: 69911, color: '#d5a886', description: 'The largest planet in the Solar System.' },
   io: { name: 'Io', kind: 'NATURAL SATELLITE', radiusKm: 1821.6, color: '#d9c28f', description: 'Jupiter’s volcanic moon, with sulfur-rich plains, dark lava flows and isolated mountains.' },
   europa: { name: 'Europa', kind: 'NATURAL SATELLITE', radiusKm: 1560.8, color: '#d4d0bb', description: 'Jupiter’s icy moon, crossed by long ridges and bands above a hidden ocean.' },
+  ganymede: { name: 'Ganymede', kind: 'NATURAL SATELLITE', radiusKm: 2631.2, color: '#a89f93', description: 'Jupiter’s largest moon, with ancient dark cratered regions and bright grooved terrain.' },
+  callisto: { name: 'Callisto', kind: 'NATURAL SATELLITE', radiusKm: 2410.3, color: '#837568', description: 'Jupiter’s outermost Galilean moon, an ancient dark icy world scarred by dense craters and multi-ring basins.' },
   saturn: { name: 'Saturn', kind: 'GAS GIANT', radiusKm: 58232, color: '#dec99d', description: 'A gas giant known for its broad ring system.' },
   enceladus: { name: 'Enceladus', kind: 'NATURAL SATELLITE', radiusKm: 252.1, color: '#e5e9eb', description: 'Saturn’s bright icy moon, with fractured terrain and an active south polar region.' },
   uranus: { name: 'Uranus', kind: 'ICE GIANT', radiusKm: 25362, color: '#a7d8df', description: 'An ice giant with an extreme axial tilt.' },
   neptune: { name: 'Neptune', kind: 'ICE GIANT', radiusKm: 24622, color: '#7095d7', description: 'A distant ice giant with fast-moving winds.' },
 }
 
-export const bodyOrder: BodyId[] = ['sun', 'mercury', 'venus', 'earth', 'moon', 'mars', 'jupiter', 'io', 'europa', 'saturn', 'enceladus', 'uranus', 'neptune']
-export const satelliteParents: Partial<Record<BodyId, BodyId>> = { moon: 'earth', io: 'jupiter', europa: 'jupiter', enceladus: 'saturn' }
-export const satellitePeriods: Partial<Record<BodyId, number>> = { moon: 27.321661, io: 360 / 203.4889538, europa: 360 / 101.3747235, enceladus: 360 / 262.7318996 }
+export const bodyOrder: BodyId[] = ['sun', 'mercury', 'venus', 'earth', 'moon', 'mars', 'jupiter', 'io', 'europa', 'ganymede', 'callisto', 'saturn', 'enceladus', 'uranus', 'neptune']
+export const satelliteParents: Partial<Record<BodyId, BodyId>> = { moon: 'earth', io: 'jupiter', europa: 'jupiter', ganymede: 'jupiter', callisto: 'jupiter', enceladus: 'saturn' }
+export const satellitePeriods: Partial<Record<BodyId, number>> = { moon: 27.321661, io: 360 / 203.4889538, europa: 360 / 101.3747235, ganymede: 360 / 50.3176081, callisto: 360 / 21.5710715, enceladus: 360 / 262.7318996 }
 export const satelliteOrder = bodyOrder.filter(id => satelliteParents[id])
 export const parentOf = (id: BodyId): BodyId => satelliteParents[id] ?? 'sun'
 export const planetOrder: BodyId[] = bodyOrder.filter(id => id !== 'sun' && !satelliteParents[id])
@@ -96,7 +98,7 @@ export function positionAt(id: BodyId, date: Date): Vec3 {
     const offset = moonOffset(date)
     return { x: earth.x + offset.x, y: earth.y + offset.y, z: earth.z + offset.z }
   }
-  if (id === 'enceladus' || id === 'io' || id === 'europa') {
+  if (id === 'enceladus' || id === 'io' || id === 'europa' || id === 'ganymede' || id === 'callisto') {
     const parent = planetPosition(parentOf(id), date)
     const offset = meanSatelliteOffset(id, date)
     return { x: parent.x + offset.x, y: parent.y + offset.y, z: parent.z + offset.z }
@@ -119,9 +121,19 @@ export function europaOffset(date: Date): Vec3 {
   return meanSatelliteOffset('europa', date)
 }
 
+export function ganymedeOffset(date: Date): Vec3 {
+  return meanSatelliteOffset('ganymede', date)
+}
+
+export function callistoOffset(date: Date): Vec3 {
+  return meanSatelliteOffset('callisto', date)
+}
+
 const meanSatelliteOrbits = {
+  callisto: { radiusKm: 1882700, phase: -98.7920553538917, rate: 21.5710715, ra: [268.72, -.009], dec: [64.83, .003] },
   enceladus: { radiusKm: 238037, phase: 2.4017741738546037, rate: 262.7318996, ra: [40.66, -.036], dec: [83.52, -.004] },
   europa: { radiusKm: 671100, phase: 34.15058196604563, rate: 101.3747235, ra: [268.08, -.009], dec: [64.51, .003] },
+  ganymede: { radiusKm: 1070400, phase: 41.49951523423481, rate: 50.3176081, ra: [268.20, -.009], dec: [64.57, .003] },
   io: { radiusKm: 421700, phase: -160.28193631371676, rate: 203.4889538, ra: [268.05, -.009], dec: [64.50, .003] },
 } as const
 

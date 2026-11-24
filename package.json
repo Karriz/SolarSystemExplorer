@@ -101,7 +101,21 @@
     "europa:build-terrain": "sh scripts/terrain-python.sh scripts/build-terrain.py --bodies europa --offline --workers 4",
     "europa:build-hillshade": "sh scripts/terrain-python.sh scripts/build-global-hillshade.py --bodies europa --workers 4",
     "europa:check-source": "sh scripts/terrain-python.sh scripts/check-europa-source.py",
-    "europa:check": "node scripts/check-europa.mjs"
+    "europa:check": "node scripts/check-europa.mjs",
+    "ganymede:fetch": "python3 scripts/fetch-ganymede.py",
+    "ganymede:prepare": "sh scripts/terrain-python.sh scripts/build-ganymede.py",
+    "ganymede:build-color": "sh scripts/terrain-python.sh scripts/build-ganymede.py --color-only",
+    "ganymede:build-terrain": "sh scripts/terrain-python.sh scripts/build-terrain.py --bodies ganymede --offline --workers 4",
+    "ganymede:build-hillshade": "sh scripts/terrain-python.sh scripts/build-global-hillshade.py --bodies ganymede --workers 4",
+    "ganymede:check-source": "sh scripts/terrain-python.sh scripts/check-ganymede-source.py",
+    "ganymede:check": "node scripts/check-ganymede.mjs",
+    "callisto:fetch": "python3 scripts/fetch-callisto.py",
+    "callisto:prepare": "sh scripts/terrain-python.sh scripts/build-callisto.py",
+    "callisto:build-color": "sh scripts/terrain-python.sh scripts/build-callisto.py --color-only",
+    "callisto:build-terrain": "sh scripts/terrain-python.sh scripts/build-terrain.py --bodies callisto --offline --workers 4",
+    "callisto:build-hillshade": "sh scripts/terrain-python.sh scripts/build-global-hillshade.py --bodies callisto --workers 4",
+    "callisto:check-source": "sh scripts/terrain-python.sh scripts/check-callisto-source.py",
+    "callisto:check": "node scripts/check-callisto.mjs"
   },
   "dependencies": {
     "@jsquash/webp": "^1.5.0",

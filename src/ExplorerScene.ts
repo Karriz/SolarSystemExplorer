@@ -118,7 +118,7 @@ export class ExplorerScene {
   private disposed = false
   private surfaceTiles: GlobeTileLayer
   private terrain = new Map<TerrainBody, GlobeTerrainLayer | CubeTerrainLayer>()
-  private surfaces = { earth: surfaceState(), moon: surfaceState(), mars: surfaceState(), mercury: surfaceState(), venus: surfaceState(), enceladus: surfaceState(), io: surfaceState(), europa: surfaceState() }
+  private surfaces = { earth: surfaceState(), moon: surfaceState(), mars: surfaceState(), mercury: surfaceState(), venus: surfaceState(), enceladus: surfaceState(), io: surfaceState(), europa: surfaceState(), ganymede: surfaceState(), callisto: surfaceState() }
   private regional = new Map<'earth' | 'moon', RegionalTerrainLayer>()
   private pilotMetricsKey = ''
   private onPilotStatus?: (body: 'earth' | 'moon', metrics: RegionalMetrics) => void
@@ -391,7 +391,7 @@ export class ExplorerScene {
     this.selected = id
     this.origin.copy(vector(id, this.date))
     this.focusDirection = null
-    if (id === 'earth' || id === 'enceladus' || id === 'io' || id === 'europa' || isGiantBody(id)) {
+    if (id === 'earth' || id === 'enceladus' || id === 'io' || id === 'europa' || id === 'ganymede' || id === 'callisto' || isGiantBody(id)) {
       // Show the illuminated hemisphere and terminator on initial focus.
       const towardSun = vector('sun', this.date).sub(vector(id, this.date)).normalize()
       const current = this.camera.position.clone().sub(this.controls.target).normalize()

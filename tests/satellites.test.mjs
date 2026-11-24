@@ -1,16 +1,20 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
-import { bodyOrder, enceladusOffset, ioOffset, europaOffset, parentOf, planetOrder, positionAt, satelliteOrder, satellitePeriods } from '../src/ephemeris.ts'
+import { bodyOrder, enceladusOffset, ioOffset, europaOffset, ganymedeOffset, callistoOffset, parentOf, planetOrder, positionAt, satelliteOrder, satellitePeriods } from '../src/ephemeris.ts'
 import { orientationAt } from '../src/orientation.ts'
 
 test('satellite registry separates moons from heliocentric planets and preserves parents', () => {
   assert.ok(bodyOrder.includes('enceladus'))
-  assert.deepEqual(satelliteOrder, ['moon', 'io', 'europa', 'enceladus'])
+  assert.deepEqual(satelliteOrder, ['moon', 'io', 'europa', 'ganymede', 'callisto', 'enceladus'])
   assert.equal(parentOf('enceladus'), 'saturn')
   assert.equal(parentOf('io'), 'jupiter')
   assert.equal(parentOf('europa'), 'jupiter')
+  assert.equal(parentOf('ganymede'), 'jupiter')
+  assert.equal(parentOf('callisto'), 'jupiter')
   assert.ok(!planetOrder.includes('europa'))
+  assert.ok(!planetOrder.includes('ganymede'))
+  assert.ok(!planetOrder.includes('callisto'))
   assert.equal(parentOf('moon'), 'earth')
   assert.equal(parentOf('saturn'), 'sun')
   assert.ok(!planetOrder.includes('enceladus') && !planetOrder.includes('moon'))
@@ -39,6 +43,32 @@ test('Europa follows Jupiter and stays within its documented approximate JPL orb
     const equatorial = [p.x, -Math.sin(tilt)*p.y-Math.cos(tilt)*p.z, Math.cos(tilt)*p.y-Math.sin(tilt)*p.z].map(v => v*149597870.7)
     assert.ok(Math.hypot(...equatorial.map((v, i) => v-sample.positionJ2000EquatorialKm[i])) < 11000)
     const orientation = orientationAt('europa', date)
+    assert.ok([orientation.ra, orientation.dec, orientation.w].every(Number.isFinite))
+  }
+})
+
+test('Ganymede follows Jupiter and stays within its documented approximate JPL orbit envelope', () => {
+  const reference = JSON.parse(readFileSync(new URL('./fixtures/ganymede/orbit-reference.json', import.meta.url)))
+  for (const sample of reference.samples) {
+    const date = new Date(sample.date), p = ganymedeOffset(date), tilt = 23.43928 * Math.PI / 180
+    const parent = positionAt('jupiter', date), moon = positionAt('ganymede', date)
+    assert.ok(Math.abs(Math.hypot(moon.x-parent.x, moon.y-parent.y, moon.z-parent.z)*149597870.7-1070400) < .001)
+    const equatorial = [p.x, -Math.sin(tilt)*p.y-Math.cos(tilt)*p.z, Math.cos(tilt)*p.y-Math.sin(tilt)*p.z].map(v => v*149597870.7)
+    assert.ok(Math.hypot(...equatorial.map((v, i) => v-sample.positionJ2000EquatorialKm[i])) < 6500)
+    const orientation = orientationAt('ganymede', date)
+    assert.ok([orientation.ra, orientation.dec, orientation.w].every(Number.isFinite))
+  }
+})
+
+test('Callisto follows Jupiter and stays within its documented approximate JPL orbit envelope', () => {
+  const reference = JSON.parse(readFileSync(new URL('./fixtures/callisto/orbit-reference.json', import.meta.url)))
+  for (const sample of reference.samples) {
+    const date = new Date(sample.date), p = callistoOffset(date), tilt = 23.43928 * Math.PI / 180
+    const parent = positionAt('jupiter', date), moon = positionAt('callisto', date)
+    assert.ok(Math.abs(Math.hypot(moon.x-parent.x, moon.y-parent.y, moon.z-parent.z)*149597870.7-1882700) < .001)
+    const equatorial = [p.x, -Math.sin(tilt)*p.y-Math.cos(tilt)*p.z, Math.cos(tilt)*p.y-Math.sin(tilt)*p.z].map(v => v*149597870.7)
+    assert.ok(Math.hypot(...equatorial.map((v, i) => v-sample.positionJ2000EquatorialKm[i])) < 45000)
+    const orientation = orientationAt('callisto', date)
     assert.ok([orientation.ra, orientation.dec, orientation.w].every(Number.isFinite))
   }
 })

@@ -24,6 +24,8 @@ export const MOON_DETAIL_PROFILE: SurfaceDetailProfile = { radiusMeters: 1737400
 export const MARS_DETAIL_PROFILE: SurfaceDetailProfile = { radiusMeters: 3389500, detailRepeatMeters: 128, mediumRepeatMeters: 512, albedoStrength: 0.3 }
 export const ENCELADUS_DETAIL_PROFILE: SurfaceDetailProfile = { radiusMeters: 252100, detailRepeatMeters: 64, mediumRepeatMeters: 256, albedoStrength: 0.06 }
 export const EUROPA_DETAIL_PROFILE: SurfaceDetailProfile = { radiusMeters: 1560800, detailRepeatMeters: 64, mediumRepeatMeters: 256, albedoStrength: 0.09 }
+export const GANYMEDE_DETAIL_PROFILE: SurfaceDetailProfile = { radiusMeters: 2631200, detailRepeatMeters: 64, mediumRepeatMeters: 256, albedoStrength: 0.14 }
+export const CALLISTO_DETAIL_PROFILE: SurfaceDetailProfile = { radiusMeters: 2410300, detailRepeatMeters: 64, mediumRepeatMeters: 256, albedoStrength: 0.16 }
 export const IO_DETAIL_PROFILE: SurfaceDetailProfile = { radiusMeters: 1821600, detailRepeatMeters: 64, mediumRepeatMeters: 256, albedoStrength: 0.16 }
 
 export const MERCURY_DETAIL_PROFILE: SurfaceDetailProfile = { radiusMeters: 2439700, detailRepeatMeters: 64, mediumRepeatMeters: 256, albedoStrength: 0.28 }

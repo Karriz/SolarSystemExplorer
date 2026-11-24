@@ -12,6 +12,8 @@ const models: Partial<Record<BodyId, { ra: [number, number]; dec: [number, numbe
   mars: { ra: [317.269202, -.10927547], dec: [54.432516, -.05827105], w: [176.049863, 350.891982443297] },
   jupiter: { ra: [268.056595, -.006499], dec: [64.495303, .002413], w: [284.95, 870.536] },
   europa: { ra: [268.08, -.009], dec: [64.51, .003], w: [36.022, 101.3747235] },
+  ganymede: { ra: [268.20, -.009], dec: [64.57, .003], w: [44.064, 50.3176081] },
+  callisto: { ra: [268.72, -.009], dec: [64.83, .003], w: [259.51, 21.5710715] },
   io: { ra: [268.05, -.009], dec: [64.50, .003], w: [200.39, 203.4889538] },
   saturn: { ra: [40.589, -.036], dec: [83.537, -.004], w: [38.90, 810.7939024] },
   enceladus: { ra: [40.66, -.036], dec: [83.52, -.004], w: [6.32, 262.7318996] },
@@ -55,6 +57,18 @@ export function orientationAt(id: BodyId, date: Date): { ra: number; dec: number
   } else if (id === 'europa') {
     const phases = [355.80 + 1191.3*t, 119.90 + 262.1*t, 229.80 + 64.3*t, 352.25 + 2382.6*t]
     const raTerms = [1.086, .060, .015, .009], decTerms = [.468, .026, .007, .002], wTerms = [-.980, -.054, -.014, -.008]
+    for (let i=0; i<phases.length; i++) {
+      ra += raTerms[i]*sin(phases[i]); dec += decTerms[i]*cos(phases[i]); w += wTerms[i]*sin(phases[i])
+    }
+  } else if (id === 'ganymede') {
+    const phases = [355.80 + 1191.3*t, 119.90 + 262.1*t, 229.80 + 64.3*t]
+    const raTerms = [-.037, .431, .091], decTerms = [-.016, .186, .039], wTerms = [.033, -.389, -.082]
+    for (let i=0; i<phases.length; i++) {
+      ra += raTerms[i]*sin(phases[i]); dec += decTerms[i]*cos(phases[i]); w += wTerms[i]*sin(phases[i])
+    }
+  } else if (id === 'callisto') {
+    const phases = [119.90 + 262.1*t, 229.80 + 64.3*t, 113.35 + 6070.0*t]
+    const raTerms = [-.068, .590, .010], decTerms = [-.029, .254, -.004], wTerms = [.061, -.533, -.009]
     for (let i=0; i<phases.length; i++) {
       ra += raTerms[i]*sin(phases[i]); dec += decTerms[i]*cos(phases[i]); w += wTerms[i]*sin(phases[i])
     }

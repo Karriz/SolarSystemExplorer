@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "body": "callisto",
+  "width": 4096,
+  "height": 2048,
+  "source": "USGS 1 km Voyager/Galileo monochrome mosaic with Galileo PIA03456-informed visible color reconstruction",
+  "naturalColorReference": "NASA/JPL PIA03456 Galileo natural-color global mosaic; appearance constraint, not a georeferenced global RGB source",
+  "colorModel": "Dark brownish-gray non-ice lag transitioning to bright cool-neutral water-ice ejecta on bright impact scars, anchored to Callisto ~0.22 geometric albedo and PIA03456 chromaticity",
+  "monoPercentiles": [
+    37.59648456573486,
+    54.91251564025879,
+    97.55290222167969,
+    133.53406646728513
+  ],
+  "linearLuminanceRange": [
+    0.08277592062950134,
+    0.8189999461174011
+  ],
+  "limitations": "No measured global RGB. Source illumination remains partly baked into Voyager/Galileo mosaic. Polar imaging gaps (~3.9%) use smooth diffusion fill.",
+  "deliveredSha256": "72ec6070fde54a83efa0ea87c2e475da9a80a34063e225fb97ca36fe1993138d",
+  "bytes": 5732654
+}

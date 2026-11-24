@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "body": "ganymede",
+  "referenceRadiusMeters": 2631200,
+  "referenceFigure": "IAU 2015 sphere (2,631.2 km; NAIF pck00011 BODY503_RADII)",
+  "width": 16384,
+  "height": 8192,
+  "minHeightMeters": -1856.9656982421875,
+  "maxHeightMeters": 941.1378173828125,
+  "measuredElevationFraction": 0.0,
+  "geologicFeatureConstrainedFraction": 0.18846966422627828,
+  "coverageMeaning": "USGS SIM 3237 mapped feature constraint density (craters, grooves, furrows, Gilgamesh, palimpsests); 0% measured global stereo DEM",
+  "preparedSha256": "f54dfc4a94b5018cf4e2b6992500fc04628df3ab2e5e3f8517f659f2d7af8f2a",
+  "gapFill": "Seed 503 global reconstruction constrained by USGS SIM 3237 geologic units, 869 mapped craters, 2283 groove traces, 909 furrow traces, 119 domes, 33 depressions, 54 palimpsests, and Gilgamesh basin; calibrated to Schenk icy-moon morphometry",
+  "seed": 503,
+  "sourceFiles": [
+    {
+      "file": "global-mono.tif",
+      "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Ganymede_Voyager_GalileoSSI_global_mosaic_1km.tif",
+      "bytes": 136844537,
+      "sha256": "c2c8d9506b8cf8f7a0a90d823d9052e91c8d9885cf7267fdce8de8216f4df888"
+    },
+    {
+      "file": "global-mono.lbl",
+      "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Ganymede_Voyager_GalileoSSI_global_mosaic_1km_pds3.lbl",
+      "bytes": 2181,
+      "sha256": "6a6c0e5430a2fc5c1330e866add82b42294024c8a046b72cd565c2fd4e12ff08"
+    },
+    {
+      "file": "global-color.tif",
+      "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Ganymede_Voyager_GalileoSSI_Global_ClrMosaic_1435m.tif",
+      "bytes": 199204541,
+      "sha256": "da47087e75bc530456d8206d5100ad3c687706353700b0cb44a8400957005a33"
+    },
+    {
+      "file": "global-color.lbl",
+      "url": "https://asc-pds-services.s3.us-west-2.amazonaws.com/mosaic/Ganymede_Voyager_GalileoSSI_Global_ClrMosaic_1435m_pds3.lbl",
+      "bytes": 2557,
+      "sha256": "d1a2d221f025e18e4cba756c3187c44447e65ff3fb00537dff009cd5011698c7"
+    },
+    {
+      "file": "geology.zip",
+      "url": "https://pubs.usgs.gov/sim/3237/downloads/Ganymede_SIM3237_Database.zip",
+      "bytes": 107290967,
+      "sha256": "2dce3f3e45e72cbfc12ba852308273a481982470c0cb21fb349c020a7c66fd50"
+    },
+    {
+      "file": "natural-color.jpg",
+      "url": "https://assets.science.nasa.gov/content/dam/science/psd/photojournal/pia/pia00/pia00716/PIA00716.jpg",
+      "bytes": 46445,
+      "sha256": "40485fbf3fb3a73ed5a8b3592066f2174c87ce64478b606bb2761bcb77fe9497"
+    }
+  ]
+}

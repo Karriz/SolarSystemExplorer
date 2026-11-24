@@ -13,6 +13,20 @@ Run `npm run camera:check` against Vite on port 5175 (or set `CAMERA_PREVIEW_URL
 
 ## Terrain and material pilot
 
+[Callisto](docs/callisto-surface.md) is available beneath Jupiter with complete
+nomenclature-constrained cratered terrain and reconstructed visible color.
+IAU/USGS multi-ring basins (Valhalla, Asgard, Adlinda, Utgard), 141 named
+craters and 8 catenae constrain the global height field (with 0% global measured
+DEM explicitly identified in provenance). Rebuild with `callisto:fetch`,
+`callisto:prepare`, `callisto:build-terrain` and `callisto:build-hillshade`.
+
+[Ganymede](docs/ganymede-surface.md) is available beneath Jupiter with complete
+geologically constrained terrain and reconstructed visible color. USGS SIM 3237
+geologic units, 869 mapped craters, grooves, furrows and the Gilgamesh basin
+constrain the global height field (with 0% global measured DEM explicitly
+identified in provenance). Rebuild with `ganymede:fetch`, `ganymede:prepare`,
+`ganymede:build-terrain` and `ganymede:build-hillshade`.
+
 [Europa](docs/europa-surface.md) is available beneath Jupiter with complete
 reconstructed ice terrain and visible color. Five controlled USGS stereo sites
 retain their local relief, while mapped ridges and chaos constrain the global
