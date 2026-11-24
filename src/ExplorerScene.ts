@@ -20,6 +20,7 @@ import { geoDirection, pilotLocations } from './terrainPilot'
 import { fitTerrainShadow } from './terrainShadows'
 import { AtmosphereRenderPipeline } from './AtmosphereRenderPipeline'
 import type { AtmosphereBody } from './atmosphereProfiles'
+import { CelestialSky } from './celestialSky'
 
 export type ScreenMarker = { id: BodyId; x: number; y: number; visible: boolean }
 const DAY_MS = 86400000
@@ -66,24 +67,6 @@ function makeTexture(id: BodyId): THREE.CanvasTexture {
   return texture
 }
 
-function makeStars(): THREE.Points {
-  const count = 1200
-  const positions = new Float32Array(count * 3)
-  let seed = 98231
-  const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296 }
-  for (let i = 0; i < count; i++) {
-    const u = rand() * 2 - 1
-    const a = rand() * Math.PI * 2
-    const s = Math.sqrt(1 - u * u)
-    positions[i * 3] = Math.cos(a) * s * 75
-    positions[i * 3 + 1] = u * 75
-    positions[i * 3 + 2] = Math.sin(a) * s * 75
-  }
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  return new THREE.Points(geometry, new THREE.PointsMaterial({ color: '#b7d7e6', size: 0.045, transparent: true, opacity: .72, sizeAttenuation: true, depthWrite: false }))
-}
-
 export class ExplorerScene {
   readonly renderer: THREE.WebGLRenderer
   private readonly renderPipeline: AtmosphereRenderPipeline
@@ -93,7 +76,8 @@ export class ExplorerScene {
   readonly bodies = new Map<BodyId, THREE.Mesh>()
   readonly orbits: THREE.Object3D[] = []
   readonly origin = new THREE.Vector3()
-  readonly stars = makeStars()
+  readonly sky = new CelestialSky()
+  readonly stars = this.sky.stars
   selected: BodyId = 'sun'
   date = new Date()
   showOrbits = true
@@ -177,10 +161,10 @@ export class ExplorerScene {
     // Normalize brightness across orbital distances so every globe shows its solar terminator.
     this.sunLight = new THREE.PointLight('#fff0d0', 3, 0, 0)
     this.scene.add(this.sunLight)
-    // Draw the background before transmitting cloud/ring proxies, so their
-    // alpha attenuates stars rather than their depth simply deleting them.
-    this.stars.renderOrder = -10
-    this.scene.add(this.stars)
+    // Draw the black celestial sky (Milky Way dome + J2000 starfield) before
+    // transmitting cloud/ring proxies, so their alpha attenuates background light.
+    this.sky.setPixelRatio(this.renderer.getPixelRatio())
+    this.scene.add(this.sky.group)
     this.createBodies()
     this.surfaceTiles = new GlobeTileLayer(this.bodies, this.renderer, new Set(['earth', ...solidSurfaceBodies]))
     const terrainUrl = new URL(import.meta.env.VITE_TERRAIN_BASE_URL || `${import.meta.env.BASE_URL}terrain/`, window.location.href).href
@@ -516,7 +500,7 @@ export class ExplorerScene {
       this.camera.near = near
       this.camera.updateProjectionMatrix()
     }
-    this.stars.position.copy(this.camera.position)
+    this.sky.syncCamera(this.camera)
     this.earthSurface.update(this.camera, viewportHeight, now, this.selected === 'earth')
     this.regional.get('earth')?.updateShadeCamera(this.camera)
     this.regional.get('moon')?.updateShadeCamera(this.camera)
@@ -565,14 +549,18 @@ export class ExplorerScene {
   }
 
   private renderFrame() {
+    this.sky.syncCamera(this.camera)
     this.renderPipeline.render(this.scene, this.camera, (['earth', 'mars', 'venus', 'titan'] as const).map(id => ({
       id, date: this.date, body: this.bodies.get(id)!, sun: this.bodies.get('sun')!.position, solarColor: this.sunLight.color,
-      stars: { material: this.stars.material as THREE.PointsMaterial, opacity: .72 },
+      stars: this.sky,
     })), this.date)
   }
 
   private resize() {
     const width = this.container.clientWidth, height = this.container.clientHeight
+    const pixelRatio = Math.min(window.devicePixelRatio, 2)
+    this.renderer.setPixelRatio(pixelRatio)
+    this.sky.setPixelRatio(pixelRatio)
     this.renderer.setSize(width, height)
     this.renderPipeline.resize()
     this.camera.aspect = width / Math.max(height, 1)
@@ -594,6 +582,7 @@ export class ExplorerScene {
     this.terrain.forEach((layer, id) => { if (!isSolidSurfaceBody(id)) layer.dispose() })
     // Atmosphere-owned proxy meshes detach before generic scene disposal.
     this.renderPipeline.dispose()
+    this.sky.dispose()
     this.scene.traverse(object => {
       if (object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Points || object instanceof THREE.Sprite) {
         object.geometry?.dispose()

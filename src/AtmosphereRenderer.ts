@@ -18,8 +18,17 @@ function atmosphereLightingState() {
     atmMultipleStrength: { value: 1 }, atmCloudPhase: { value: 0 }, atmCloudVariation: { value: 1 },
   }
 }
+export type SkyVisibilityTarget =
+  | { material: THREE.PointsMaterial; opacity: number }
+  | { setVisibility: (visibility: number) => void }
 export type AtmosphereFrame = { id?: AtmosphereBody; date?: Date; body: THREE.Object3D; sun: THREE.Vector3; solarColor: THREE.Color;
-  stars?: { material: THREE.PointsMaterial; opacity: number } }
+  stars?: SkyVisibilityTarget }
+
+export function applySkyVisibility(target: SkyVisibilityTarget | undefined, visibility: number) {
+  if (!target) return
+  if ('setVisibility' in target) target.setVisibility(visibility)
+  else target.material.opacity = target.opacity * visibility
+}
 
 /** Body-specific optical owner. Tables are lazy, immutable and generated off-thread.
  * Dense tables must pass flux/convergence gates before they can be activated. */
@@ -99,7 +108,7 @@ export class AtmosphereRenderer {
     this.lighting.atmEnabled.value = 0
     this.starVisibility = 1
     this.cloudPlaceholder?.update(false)
-    if (frame?.stars) frame.stars.material.opacity = frame.stars.opacity
+    applySkyVisibility(frame?.stars, 1)
     if (!this.enabled || !frame || this.state === 'disposed') return
     camera.updateMatrixWorld(); frame.body.updateWorldMatrix(true, false)
     const center = frame.body.getWorldPosition(this.relative)
@@ -141,7 +150,7 @@ export class AtmosphereRenderer {
     const daylight = THREE.MathUtils.smoothstep(mu, -.12, .02)
     const localAir = 1 - THREE.MathUtils.smoothstep(altitude, 20, 100)
     this.starVisibility = 1 - this.lighting.atmEnabled.value * (1 - (1 - daylight * localAir) ** 2)
-    if (frame.stars) frame.stars.material.opacity = frame.stars.opacity * this.starVisibility
+    applySkyVisibility(frame.stars, this.starVisibility)
   }
 
   metrics() {

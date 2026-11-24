@@ -3,7 +3,7 @@ import { GiantPlanetRenderer } from './GiantPlanetRenderer.ts'
 import { SolarRenderer } from './SolarRenderer.ts'
 import type { GiantBody } from './giantPlanetProfiles.ts'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
-import { AtmosphereRenderer, type AtmosphereFrame } from './AtmosphereRenderer.ts'
+import { applySkyVisibility, AtmosphereRenderer, type AtmosphereFrame } from './AtmosphereRenderer.ts'
 import { marsAtmosphere, titanAtmosphere, venusAtmosphere, type AtmosphereBody } from './atmosphereProfiles.ts'
 
 const TARGET_BUDGET = 80 * 1024 * 1024
@@ -134,7 +134,7 @@ export class AtmosphereRenderPipeline {
       .sort((a, b) => b.distance - a.distance)
     this.compositionOrder.value.set(order[0].index, order[1].index, order[2].index, order[3].index)
     const stars = frames.find(frame => frame.stars)?.stars
-    if (stars) stars.material.opacity = stars.opacity * Math.min(...ids.map(id => this.atmospheres[id].metrics().starVisibility))
+    applySkyVisibility(stars, Math.min(...ids.map(id => this.atmospheres[id].metrics().starVisibility)))
     const renderer = this.renderer, previous = renderer.getRenderTarget()
     const autoReset = renderer.info.autoReset
     try {
