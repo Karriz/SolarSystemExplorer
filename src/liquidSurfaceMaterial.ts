@@ -64,12 +64,15 @@ export function configureLiquidSurfaceMaterial(material: THREE.Material, state: 
       varying float vLiquidDistance;
       ${shader.fragmentShader}`
     shader.fragmentShader = shader.fragmentShader.replace('#include <lights_physical_fragment>', `
+      float surfaceLiquidWeight = 0.0;
+      float surfaceLiquidF0 = 0.017;
       if (liquidReady > 0.5) {
         vec2 liqLl = surfaceLonLat();
         vec2 liqUv = vec2(liqLl.x / 360.0 + 0.5, 0.5 + liqLl.y / 180.0);
         vec2 liqDx = dFdx(liqUv), liqDy = dFdy(liqUv);
         liqDx.x -= round(liqDx.x); liqDy.x -= round(liqDy.x);
         float liq = smoothstep(0.08, 0.85, textureGrad(liquidMask, liqUv, liqDx, liqDy).r);
+        surfaceLiquidWeight = liq;
         if (liq > 0.001) {
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${cr}, ${cg}, ${cb}), liq * 0.92);
           roughnessFactor = mix(roughnessFactor, ${profile.roughness}, liq);
@@ -87,6 +90,6 @@ export function configureLiquidSurfaceMaterial(material: THREE.Material, state: 
       }
       #include <lights_physical_fragment>`)
   }
-  material.customProgramCacheKey = () => `${previousKey}/liquid-sea-v1/${profile.roughness}/${profile.waveStrength}`
+  material.customProgramCacheKey = () => `${previousKey}/liquid-sea-v2/${profile.roughness}/${profile.waveStrength}`
   material.needsUpdate = true
 }

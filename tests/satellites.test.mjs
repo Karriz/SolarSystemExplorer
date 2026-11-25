@@ -135,5 +135,6 @@ test('Titan liquid hydrocarbon sea shader binds mask, ripples and low specular r
   assert.ok(shader.vertexShader.includes('vLiquidDistance'))
   assert.ok(shader.fragmentShader.includes('textureGrad(liquidMask, liqUv, liqDx, liqDy)'))
   assert.ok(shader.fragmentShader.includes('roughnessFactor = mix(roughnessFactor, 0.14, liq)'))
-  assert.ok(material.customProgramCacheKey().includes('/liquid-sea-v1/0.14/0.014'))
+  assert.ok(shader.fragmentShader.includes('surfaceLiquidWeight = liq;'))
+  assert.ok(material.customProgramCacheKey().includes('/liquid-sea-v2/0.14/0.014'))
 })

@@ -12,6 +12,7 @@ import type { SurfaceColorMode } from './PlanetSurfaceRenderer.ts'
 import type { TileAddress, TileBounds } from './surfaceTiles.ts'
 import type { AtmosphericLighting } from './AtmosphereRenderer.ts'
 import { configureAtmosphericLighting } from './atmosphericLighting.ts'
+import { configurePlanetaryLighting, type PlanetaryLightingState } from './planetaryLighting.ts'
 
 export const earthRenderProfile: SolidSurfaceProfile = {
   id: 'earth', detail: EARTH_DETAIL_PROFILE, cubeColorSampling: false, originalColorWidth: 5400,
@@ -28,7 +29,7 @@ export class EarthSurfaceRenderer {
   readonly color = new PlanetColorTexture('earth', earthRenderProfile)
   readonly vectors = new EarthVectorSource()
   private placeholder = new THREE.DataTexture(new Uint8Array([0]), 1, 1, THREE.RedFormat)
-  readonly materialState = { global: { value: this.placeholder as THREE.Texture }, globalReady: { value: 0 }, time: { value: 0 } }
+  readonly materialState = { global: { value: this.placeholder as THREE.Texture }, globalReady: { value: 0 }, globalHasDistance: { value: 0 }, time: { value: 0 } }
   private readonly shade
   private readonly material: THREE.MeshStandardMaterial
   private started = false
@@ -44,9 +45,11 @@ export class EarthSurfaceRenderer {
   readonly state: SurfaceState
   private readonly renderer: THREE.WebGLRenderer
   private readonly atmosphericLighting?: AtmosphericLighting
+  private readonly planetaryLighting?: PlanetaryLightingState
+  private cloudTexture: THREE.Texture | null = null
   private readonly overviewGeometry: THREE.BufferGeometry
   private closeGeometry?: THREE.SphereGeometry
-  constructor(body: THREE.Mesh, state: SurfaceState, renderer: THREE.WebGLRenderer, atmosphericLighting?: AtmosphericLighting) {
+  constructor(body: THREE.Mesh, state: SurfaceState, renderer: THREE.WebGLRenderer, atmosphericLighting?: AtmosphericLighting, planetaryLighting?: PlanetaryLightingState) {
     this.body = body; this.state = state; this.renderer = renderer
     this.overviewGeometry = body.geometry
     this.placeholder.needsUpdate = true
@@ -54,7 +57,9 @@ export class EarthSurfaceRenderer {
     this.material = body.material as THREE.MeshStandardMaterial
     this.shade = configureEarthSurfaceMaterial(this.material, state, this.materialState, 149_597_870_700, true)
     this.atmosphericLighting = atmosphericLighting
+    this.planetaryLighting = planetaryLighting
     if (atmosphericLighting) configureAtmosphericLighting(this.material, atmosphericLighting, true)
+    if (planetaryLighting) configurePlanetaryLighting(this.material, planetaryLighting, 'earth')
     body.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })
     // Shared clipping/depth contract; appearance masks do not alter depth programs.
     configureEarthSurfaceMaterial(body.customDepthMaterial, state, this.materialState, 149_597_870_700, true)
@@ -78,24 +83,54 @@ export class EarthSurfaceRenderer {
   private async loadGlobal() {
     const timeout = setTimeout(() => this.controller.abort(), 15000)
     try {
-      const response = await fetch(`${import.meta.env.BASE_URL}textures/earth-surface-base.bin.gz?v=coverage-4k-v2`, { signal: this.controller.signal })
+      const response = await fetch(`${import.meta.env.BASE_URL}textures/earth-surface-base.bin.gz?v=coverage-sdf-4k-v3`, { signal: this.controller.signal })
       if (!response.ok || !response.body) throw Error('Global water mask unavailable')
       let data = new Uint8Array(await response.arrayBuffer())
       // Vite and some static hosts set Content-Encoding:gzip; browsers then
       // deliver the decompressed body. Other hosts serve the gzip file as-is.
       if (data[0] === 0x1f && data[1] === 0x8b) data = new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer())
-      if (data.length !== 4096 * 2048 && data.length !== 2048 * 1024) throw Error('Invalid global water mask')
+      const hasDistance = data.length === 4096 * 2048 * 2
+      if (!hasDistance && data.length !== 4096 * 2048 && data.length !== 2048 * 1024) throw Error('Invalid global water mask')
       if (this.disposed) return
       // Decode class IDs into coverage before enabling interpolation/mips.
-      const width = data.length === 4096 * 2048 ? 4096 : 2048
-      if (width === 2048) data = data.map(value => value === 9 ? 255 : 0)
-      const texture = new THREE.DataTexture(data, width, width / 2, THREE.RedFormat)
+      const width = hasDistance || data.length === 4096 * 2048 ? 4096 : 2048
+      const height = width / 2
+      let textureData = data
+      if (hasDistance) {
+        const count = width * height
+        const interleaved = new Uint8Array(count * 2)
+        for (let i = 0; i < count; i++) {
+          interleaved[i * 2] = data[i]
+          interleaved[i * 2 + 1] = data[count + i]
+        }
+        textureData = interleaved
+      } else if (width === 2048) {
+        textureData = data.map(value => value === 9 ? 255 : 0)
+      }
+      const texture = new THREE.DataTexture(textureData, width, height, hasDistance ? THREE.RGFormat : THREE.RedFormat)
       texture.wrapS = THREE.RepeatWrapping; texture.minFilter = THREE.LinearMipmapLinearFilter; texture.magFilter = THREE.LinearFilter
       texture.generateMipmaps = true; texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
       texture.unpackAlignment = 1; texture.needsUpdate = true
-      this.materialState.global.value = texture; this.materialState.globalReady.value = 1
+      this.materialState.global.value = texture; this.materialState.globalHasDistance.value = hasDistance ? 1 : 0; this.materialState.globalReady.value = 1
     } catch { if (!this.disposed) this.globalError = true }
     finally { clearTimeout(timeout) }
+  }
+  private loadClouds() {
+    if (!this.atmosphericLighting) return
+    const loader = new THREE.TextureLoader()
+    loader.load(`${import.meta.env.BASE_URL}textures/earth-clouds.webp`, texture => {
+      if (this.disposed) { texture.dispose(); return }
+      texture.colorSpace = THREE.NoColorSpace
+      texture.wrapS = THREE.RepeatWrapping
+      texture.wrapT = THREE.ClampToEdgeWrapping
+      texture.minFilter = THREE.LinearMipmapLinearFilter
+      texture.magFilter = THREE.LinearFilter
+      texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
+      this.cloudTexture?.dispose()
+      this.cloudTexture = texture
+      this.atmosphericLighting!.atmEarthClouds.value = texture
+      this.atmosphericLighting!.atmEarthCloudsReady.value = 1
+    }, undefined, () => { /* Clear-air rendering remains active when cloud asset is absent. */ })
   }
   update(camera: THREE.PerspectiveCamera, _height: number, now: number, selected: boolean) {
     if (this.disposed) return
@@ -104,7 +139,7 @@ export class EarthSurfaceRenderer {
     if (selected && !this.closeGeometry) this.closeGeometry = new THREE.SphereGeometry((this.overviewGeometry as THREE.SphereGeometry).parameters.radius, 512, 256)
     this.body.geometry = selected ? this.closeGeometry! : this.overviewGeometry
     if (selected && !this.started) {
-      this.started = true; void this.loadColor(); void this.loadGlobal()
+      this.started = true; void this.loadColor(); void this.loadGlobal(); this.loadClouds()
       loadSurfaceDetail('earth', this.state, this.renderer, () => this.disposed)
     }
     this.materialState.time.value = (now / 1000) % 3600
@@ -115,6 +150,7 @@ export class EarthSurfaceRenderer {
   configurePatch(material: THREE.Material, origin: THREE.Vector3, camera: { value: THREE.Vector3 }, binding: EarthMaskBinding) {
     const shade = configureEarthSurfaceMaterial(material, this.state, this.materialState, 6371000, false, origin, camera, binding)
     if (this.atmosphericLighting) configureAtmosphericLighting(material, this.atmosphericLighting)
+    if (this.planetaryLighting) configurePlanetaryLighting(material, this.planetaryLighting, 'earth-patch')
     return shade
   }
   binding() { return earthMaskBinding() }
@@ -176,11 +212,15 @@ export class EarthSurfaceRenderer {
     }
     const colorPixels = pixels(this.color.texture), detailPixels = pixels(this.state.detailMap.value) + pixels(this.state.mediumDetailMap.value)
     const waterPixels = this.materialState.globalReady.value ? pixels(this.materialState.global.value) : 0
+    const cloudPixels = pixels(this.cloudTexture)
     const referenceGeometryBytes = this.closeGeometry ? Object.values(this.closeGeometry.attributes).reduce((sum, a) => sum + a.array.byteLength, 0) + (this.closeGeometry.index?.array.byteLength ?? 0) : 0
+    const waterBytesPerPixel = this.materialState.globalHasDistance.value > 0 ? 2 : 1
     const assets = { referenceGeometryBytes, colorGpuBytes: Math.ceil(colorPixels * 4 * 4 / 3), colorDecodedBytes: colorPixels * 4,
       detailGpuBytes: Math.ceil(detailPixels * 4 * 4 / 3), detailDecodedBytes: detailPixels * 4,
-      waterGpuBytes: Math.ceil(waterPixels * 4 / 3), waterDecodedBytes: waterPixels }
+      waterGpuBytes: Math.ceil(waterPixels * waterBytesPerPixel * 4 / 3), waterDecodedBytes: waterPixels * waterBytesPerPixel,
+      cloudGpuBytes: Math.ceil(cloudPixels * 4 * 4 / 3), cloudDecodedBytes: cloudPixels * 4 }
     return { color: this.colorMode, water: this.materialState.globalReady.value > 0 ? 'mapped overview' : this.globalError ? 'unavailable' : 'loading',
+    clouds: this.cloudTexture ? 'Blue Marble global mosaic' : 'clear-air fallback',
     vectors: this.vectors.metrics(), lakeLevels: this.lakeHeights.size,
     assets, estimatedGlobalBytes: Object.values(assets).reduce((sum, bytes) => sum + bytes, 0),
     detail: this.state.detailMapReady.value > 0, classification: 'OpenFreeMap local polygons; unclassified global land' }
@@ -194,7 +234,13 @@ export class EarthSurfaceRenderer {
     this.color.dispose(); this.placeholder.dispose()
     if (this.materialState.globalReady.value) this.materialState.global.value.dispose()
     this.materialState.global.value = this.placeholder
+    this.materialState.globalHasDistance.value = 0
     this.materialState.globalReady.value = 0
+    if (this.atmosphericLighting && this.atmosphericLighting.atmEarthClouds.value === this.cloudTexture) {
+      this.atmosphericLighting.atmEarthClouds.value = null
+      this.atmosphericLighting.atmEarthCloudsReady.value = 0
+    }
+    this.cloudTexture?.dispose(); this.cloudTexture = null
     this.lakeHeights.clear(); this.lakeAttempts.clear()
     for (const layer of [{ map: this.state.detailMap, ready: this.state.detailMapReady }, { map: this.state.mediumDetailMap, ready: this.state.mediumDetailReady }]) {
       layer.map.value?.dispose(); layer.map.value = null; layer.ready.value = 0

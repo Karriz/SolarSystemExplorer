@@ -15,9 +15,11 @@ import rasterio
 from rasterio.enums import Resampling
 from rasterio.features import rasterize
 from rasterio.transform import from_bounds
+from scipy.ndimage import distance_transform_edt
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'public/textures'
+GLOBAL_SHORE_DISTANCE = 4
 
 
 def main():
@@ -25,35 +27,66 @@ def main():
     parser.add_argument('--ocean', type=Path, required=True)
     args = parser.parse_args()
     source = OUT / 'earth-base.jpg'
+    width, height, aa = 4096, 2048, 4
     with rasterio.open(source) as dataset:
         assert (dataset.width, dataset.height) == (5400, 2700)
-        rgb = dataset.read(out_shape=(3, 2048, 4096), resampling=Resampling.lanczos)
-    with rasterio.open(OUT / 'earth-color.webp', 'w', driver='WEBP', width=4096,
-                       height=2048, count=3, dtype='uint8', quality=92) as dataset:
-        dataset.write(rgb)
+        rgb = dataset.read(out_shape=(3, height, width), resampling=Resampling.lanczos)
     ocean = json.loads(args.ocean.read_text())
     # Subpixel geographic water coverage, not class IDs. Filter/mip this as an
-    # area fraction so global coastlines and small islands survive minification.
-    width, height, aa = 4096, 2048, 4
+    # area fraction so global coastlines and small islands survive minification,
+    # and pair it with a 4x-supersampled signed distance field so magnified
+    # global coastlines stay crisp instead of turning into a soft gradient.
     fine = rasterize([(feature['geometry'], 1) for feature in ocean['features']],
                      out_shape=(height * aa, width * aa),
                      transform=from_bounds(-180, -90, 180, 90, width * aa, height * aa),
                      fill=0, dtype='uint8')
     counts = fine.reshape(height, aa, width, aa).sum(axis=(1, 3), dtype=np.uint16)
     coverage = np.rint(counts * (255.0 / (aa * aa))).astype('uint8')
-    raw = coverage.tobytes()
+
+    pad = GLOBAL_SHORE_DISTANCE * aa
+    padded = np.concatenate([fine[:, -pad:], fine, fine[:, :pad]], axis=1)
+    d_ocean = distance_transform_edt(padded == 1).astype(np.float32)
+    d_land = distance_transform_edt(padded == 0).astype(np.float32)
+    sdf_fine = np.where(padded == 1, d_ocean - 0.5, -(d_land - 0.5)) / aa
+    sdf_coarse = sdf_fine[:, pad:-pad].reshape(height, aa, width, aa)[:, 1:3, :, 1:3].mean(axis=(1, 3))
+    distance = np.rint((np.clip(sdf_coarse, -GLOBAL_SHORE_DISTANCE, GLOBAL_SHORE_DISTANCE)
+                        / GLOBAL_SHORE_DISTANCE * 0.5 + 0.5) * 255.0).astype('uint8')
+
+    # De-bleed coastal non-ice texels immediately bordering pure land so bilinear
+    # sampling of earth-color.webp does not smear dark ocean blue onto land.
+    pure_land = coverage == 0
+    color_pad = 4
+    pl_padded = np.concatenate([pure_land[:, -color_pad:], pure_land, pure_land[:, :color_pad]], axis=1)
+    dist_pl, (iy, ix) = distance_transform_edt(~pl_padded, return_indices=True)
+    dist_pl = dist_pl[:, color_pad:-color_pad]
+    iy = iy[:, color_pad:-color_pad]
+    ix = (ix[:, color_pad:-color_pad] - color_pad) % width
+    luma = rgb.max(axis=0)
+    lat_deg = np.abs(90.0 - (np.arange(height) + 0.5) / height * 180.0)[:, None]
+    is_ice = (luma > 140) & (lat_deg > 55.0)
+    fill_mask = (~pure_land) & (dist_pl <= 1.5) & (~is_ice)
+    for c in range(3):
+        channel = rgb[c]
+        channel[fill_mask] = channel[iy[fill_mask], ix[fill_mask]]
+
+    with rasterio.open(OUT / 'earth-color.webp', 'w', driver='WEBP', width=width,
+                       height=height, count=3, dtype='uint8', quality=92) as dataset:
+        dataset.write(rgb)
+    # Planar RG layout preserves long constant runs for gzip compression.
+    raw = coverage.tobytes() + distance.tobytes()
     (OUT / 'earth-surface-base.bin.gz').write_bytes(gzip.compress(raw, mtime=0))
     metadata = {
-        'schema': 1, 'body': 'earth', 'width': 4096, 'height': 2048,
+        'schema': 1, 'body': 'earth', 'width': width, 'height': height,
         'source': 'NASA BMNG October 2004 base map without added relief shading',
         'sourceUrl': 'https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-map/',
         'sourceSha256': hashlib.sha256(source.read_bytes()).hexdigest(),
         'colorSha256': hashlib.sha256((OUT / 'earth-color.webp').read_bytes()).hexdigest(),
-        'globalMask': {'width': 4096, 'height': 2048, 'encoding': 'uint8-water-coverage', 'supersampling': 4, 'source': 'Natural Earth 1:10m ocean',
+        'globalMask': {'width': width, 'height': height, 'encoding': 'planar-rg8-water-coverage-sdf', 'supersampling': aa, 'shoreDistanceTexels': GLOBAL_SHORE_DISTANCE, 'source': 'Natural Earth 1:10m ocean',
                        'sourceUrl': 'https://www.naturalearthdata.com/downloads/10m-physical-vectors/10m-ocean/',
                        'inputSha256': hashlib.sha256(args.ocean.read_bytes()).hexdigest(),
                        'sha256': hashlib.sha256(raw).hexdigest(),
                        'coverage': {'0': 'land', '255': 'ocean', 'intermediate': 'fractional ocean coverage'},
+                       'distance': {'0': f'-{GLOBAL_SHORE_DISTANCE} texels (land)', '255': f'+{GLOBAL_SHORE_DISTANCE} texels (ocean)', '127.5': 'shoreline'},
                        'note': 'Generalized overview, not ground-level shorelines. Inland water comes from local vector tiles.'},
         'detail': 'Generated packed normal/roughness detail; mapped local classes from OpenFreeMap. No generated displacement.',
         'note': 'Appearance composite, not calibrated albedo. Global WorldCover overview is not installed.'

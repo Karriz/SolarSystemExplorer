@@ -21,6 +21,7 @@ import { fitTerrainShadow } from './terrainShadows'
 import { AtmosphereRenderPipeline } from './AtmosphereRenderPipeline'
 import type { AtmosphereBody } from './atmosphereProfiles'
 import { CelestialSky } from './celestialSky'
+import { planetaryLightingState, updatePlanetaryLighting, type PlanetaryLightingState } from './planetaryLighting'
 
 export type ScreenMarker = { id: BodyId; x: number; y: number; visible: boolean }
 const DAY_MS = 86400000
@@ -103,6 +104,7 @@ export class ExplorerScene {
   private disposed = false
   private surfaceTiles: GlobeTileLayer
   private terrain = new Map<TerrainBody, GlobeTerrainLayer | CubeTerrainLayer>()
+  private planetaryLights = new Map<BodyId, PlanetaryLightingState>()
   private surfaces = { earth: surfaceState(), moon: surfaceState(), mars: surfaceState(), mercury: surfaceState(), venus: surfaceState(), enceladus: surfaceState(), titan: surfaceState(), io: surfaceState(), europa: surfaceState(), ganymede: surfaceState(), callisto: surfaceState() }
   private regional = new Map<'earth' | 'moon', RegionalTerrainLayer>()
   private pilotMetricsKey = ''
@@ -157,7 +159,8 @@ export class ExplorerScene {
     this.controls = createCameraOrbit(this.camera, this.renderer.domElement, new THREE.Vector3(),
       radiusAu('sun') + SURFACE_CLEARANCE, this.onControlStart, this.hitGround, this.groundRadius)
 
-    this.scene.add(new THREE.AmbientLight('#c5d8f0', .25))
+    // Restrained dark-space floor; moons receive directional planetshine instead of flat fill.
+    this.scene.add(new THREE.AmbientLight('#c5d8f0', .045))
     // Normalize brightness across orbital distances so every globe shows its solar terminator.
     this.sunLight = new THREE.PointLight('#fff0d0', 3, 0, 0)
     this.scene.add(this.sunLight)
@@ -166,13 +169,17 @@ export class ExplorerScene {
     this.sky.setPixelRatio(this.renderer.getPixelRatio())
     this.scene.add(this.sky.group)
     this.createBodies()
+    for (const id of bodyOrder) {
+      if (id !== 'sun' && !isGiantBody(id)) this.planetaryLights.set(id, planetaryLightingState())
+    }
     this.surfaceTiles = new GlobeTileLayer(this.bodies, this.renderer, new Set(['earth', ...solidSurfaceBodies]))
     const terrainUrl = new URL(import.meta.env.VITE_TERRAIN_BASE_URL || `${import.meta.env.BASE_URL}terrain/`, window.location.href).href
     for (const id of terrainBodies) {
       if (isSolidSurfaceBody(id)) {
         const surface = new PlanetSurfaceRenderer(id, this.bodies.get(id)!, this.surfaces[id],
           this.renderer, terrainUrl, id === 'venus' ? this.venusHillshade : id === 'titan' ? this.titanHillshade : this.terrainHillshade, onTerrainStatus, onColorStatus,
-          id === 'mars' || id === 'venus' || id === 'titan' ? this.renderPipeline.atmospheres[id].lighting : undefined)
+          id === 'mars' || id === 'venus' || id === 'titan' ? this.renderPipeline.atmospheres[id].lighting : undefined,
+          this.planetaryLights.get(id))
         this.planetSurfaces.set(id, surface)
         this.terrain.set(id, surface.terrain)
       } else {
@@ -180,7 +187,7 @@ export class ExplorerScene {
           terrainUrl, undefined, id, undefined, this.terrainHillshade))
       }
     }
-    this.earthSurface = new EarthSurfaceRenderer(this.bodies.get('earth')!, this.surfaces.earth, this.renderer, this.renderPipeline.atmosphere.lighting)
+    this.earthSurface = new EarthSurfaceRenderer(this.bodies.get('earth')!, this.surfaces.earth, this.renderer, this.renderPipeline.atmosphere.lighting, this.planetaryLights.get('earth'))
     this.regional.set('earth', this.earthSurface.terrain)
     this.regional.set('moon', new RegionalTerrainLayer(this.bodies.get('moon')!, 'moon', this.surfaces.moon))
     this.updateBodyOrientations()
@@ -436,6 +443,9 @@ export class ExplorerScene {
       const mesh = this.bodies.get(id)!
       mesh.position.copy(vector(id, this.date)).sub(this.origin)
     }
+    for (const [id, lightState] of this.planetaryLights) {
+      updatePlanetaryLighting(id, lightState, this.bodies)
+    }
     for (const orbit of this.orbits) {
       orbit.position.copy(orbit.userData.parent ? vector(orbit.userData.parent, this.date) : new THREE.Vector3()).sub(this.origin)
     }
@@ -553,7 +563,7 @@ export class ExplorerScene {
     this.renderPipeline.render(this.scene, this.camera, (['earth', 'mars', 'venus', 'titan'] as const).map(id => ({
       id, date: this.date, body: this.bodies.get(id)!, sun: this.bodies.get('sun')!.position, solarColor: this.sunLight.color,
       stars: this.sky,
-    })), this.date)
+    })), this.date, this.bodies)
   }
 
   private resize() {

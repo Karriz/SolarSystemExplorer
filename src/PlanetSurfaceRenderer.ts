@@ -13,6 +13,7 @@ import { configureAtmosphericLighting } from './atmosphericLighting.ts'
 import type { AtmosphericLighting } from './AtmosphereRenderer.ts'
 import { atmosphereProfiles } from './atmosphereProfiles.ts'
 import { configureLiquidSurfaceMaterial, liquidMaterialState, loadLiquidMask, type LiquidMaterialState } from './liquidSurfaceMaterial.ts'
+import { configurePlanetaryLighting, type PlanetaryLightingState } from './planetaryLighting.ts'
 
 export type SurfaceColorMode = 'loading' | 'compact' | 'original' | 'unavailable'
 export type SurfaceColorStatus = { mode: SurfaceColorMode; message: string }
@@ -42,7 +43,8 @@ export class PlanetSurfaceRenderer {
     terrainUrl: string, hillshadeEnabled: HillshadeState,
     onTerrainStatus: (status: TerrainStatus) => void,
     onColorStatus: (body: SolidSurfaceBody, status: SurfaceColorStatus) => void,
-    atmosphericLighting?: AtmosphericLighting) {
+    atmosphericLighting?: AtmosphericLighting,
+    planetaryLighting?: PlanetaryLightingState) {
     this.id = id
     this.body = body
     this.state = state
@@ -58,18 +60,19 @@ export class PlanetSurfaceRenderer {
     this.shade = configurePlanetSurfaceMaterial(this.material, state, 149_597_870_700,
       true, undefined, undefined, profile.detail)
     if (profile.cubeColorSampling) configureCubeColorMaterial(this.material)
-    configureTerrainHillshade(this.material, hillshadeEnabled, this.hillshade)
+    configureTerrainHillshade(this.material, hillshadeEnabled, this.hillshade, { cubeMesh: false, radiusMeters: profile.detail.radiusMeters })
     if (profile.liquid) {
       this.liquid = liquidMaterialState()
       configureLiquidSurfaceMaterial(this.material, this.liquid, profile.liquid)
     }
     const air = id === 'mars' || id === 'venus' || id === 'titan' ? atmosphereProfiles[id] : undefined
     if (air && atmosphericLighting) configureAtmosphericLighting(this.material, atmosphericLighting, true, air)
+    if (planetaryLighting) configurePlanetaryLighting(this.material, planetaryLighting, id)
     body.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })
     configurePlanetSurfaceMaterial(body.customDepthMaterial, state, 149_597_870_700,
       true, undefined, this.shade.camera, profile.detail)
     this.terrain = new CubeTerrainLayer(body, onTerrainStatus, terrainUrl, state,
-      hillshadeEnabled, id, this.hillshade, profile, air && atmosphericLighting ? { state: atmosphericLighting, profile: air } : undefined, this.liquid)
+      hillshadeEnabled, id, this.hillshade, profile, air && atmosphericLighting ? { state: atmosphericLighting, profile: air } : undefined, this.liquid, planetaryLighting)
   }
 
   private async loadColor() {

@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "body": "earth",
+  "width": 4096,
+  "height": 2048,
+  "sourceDimensions": [
+    8192,
+    4096
+  ],
+  "source": "NASA Visible Earth Blue Marble global cloud mosaic via Solar System Scope (CC BY 4.0)",
+  "license": "CC BY 4.0",
+  "pageUrl": "https://commons.wikimedia.org/wiki/File:Solarsystemscope_texture_8k_earth_clouds.jpg",
+  "sourceUrl": "https://upload.wikimedia.org/wikipedia/commons/7/7a/Solarsystemscope_texture_8k_earth_clouds.jpg",
+  "sourceSha256": "c792eca228989d36ebb45d3ea6ff1198be5e21a25d70d2fbcb2124ffd14ba7f5",
+  "outputSha256": "92f53e97765067b2a71ee090d22bfb053300fb43ef05c9d0aea3f15528ac030d",
+  "bytes": 2523286,
+  "note": "Fixed observed global cloud composite, not live weather. Linear cloud-opacity fraction."
+}

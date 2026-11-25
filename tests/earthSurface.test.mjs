@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
+import { gunzipSync } from 'node:zlib'
+import * as THREE from 'three'
 import { decodeEarthMask, decodeEarthSurface, rasterizeRings, materialClass, EARTH_CLASS, MASK_WIDTH, MASK_GUTTER, filterEarthMaterials, shoreDistance } from '../src/earthSurfaceData.ts'
-import { earthMaskTransform } from '../src/earthSurfaceMaterial.ts'
+import { configureEarthSurfaceMaterial, earthMaskBinding, earthMaskTransform, GLOBAL_SHORE_DISTANCE } from '../src/earthSurfaceMaterial.ts'
+import { surfaceState } from '../src/surfaceMaterial.ts'
 import { EarthVectorSource, earthVectorAddress } from '../src/EarthVectorSource.ts'
 import { EarthSurfaceRenderer, planEarthMasks } from '../src/EarthSurfaceRenderer.ts'
 import { mercatorBounds } from '../src/terrainPilot.ts'
@@ -248,4 +251,62 @@ test('surface LOD hysteresis retains mask resolution and native source detail ne
     plan = planEarthMasks([{ address, pixels }], plan)
     assert.equal(plan[0].sourceZoom, 11)
   }
+})
+
+test('Earth surface material reconstructs crisp global and local coastlines with sharpened material responses', () => {
+  const placeholder = new THREE.DataTexture(new Uint8Array([0, 128]), 1, 1, THREE.RGFormat)
+  const state = surfaceState()
+  const earthState = { global: { value: placeholder }, globalReady: { value: 1 }, globalHasDistance: { value: 1 }, time: { value: 0 } }
+  const binding = earthMaskBinding()
+  const material = new THREE.MeshStandardMaterial()
+  configureEarthSurfaceMaterial(material, state, earthState, 6371000, false, undefined, undefined, binding)
+  const shader = {
+    uniforms: {},
+    vertexShader: '#include <begin_vertex>\n#include <uv_vertex>\n',
+    fragmentShader: '#include <map_fragment>\n#include <normal_fragment_maps>\n#include <lights_physical_fragment>\n',
+  }
+  material.onBeforeCompile(shader, {})
+  assert.ok('earthGlobalHasDistance' in shader.uniforms)
+  assert.equal(shader.uniforms.earthGlobalHasDistance.value, 1)
+  assert.ok(shader.fragmentShader.includes(`(globalTexel.g*2.0-1.0)*${GLOBAL_SHORE_DISTANCE}.0`))
+  assert.ok(shader.fragmentShader.includes('gAniso=max(gMinor,max(gDx,gDy)*0.125);'))
+  assert.ok(shader.fragmentShader.includes('float anisoFootprint=max(minorFootprint,max(dxTexels,dyTexels)*0.125);'))
+  assert.ok(shader.fragmentShader.includes('earthRoughness=mix(landRoughness,0.24,wet);'))
+  assert.ok(shader.fragmentShader.includes('earthRelief=mix(landRelief,0.0,wet);'))
+  assert.ok(shader.fragmentShader.includes('earthMapped=mix(landMapped,1.0,wet);'))
+
+  // Omitting globalHasDistance remains backward-compatible and defaults to 0.
+  const legacyMaterial = new THREE.MeshStandardMaterial()
+  configureEarthSurfaceMaterial(legacyMaterial, state, { global: { value: placeholder }, globalReady: { value: 1 }, time: { value: 0 } }, 6371000, false)
+  const legacyShader = {
+    uniforms: {},
+    vertexShader: '#include <begin_vertex>\n#include <uv_vertex>\n',
+    fragmentShader: '#include <map_fragment>\n#include <normal_fragment_maps>\n#include <lights_physical_fragment>\n',
+  }
+  legacyMaterial.onBeforeCompile(legacyShader, {})
+  assert.equal(legacyShader.uniforms.earthGlobalHasDistance.value, 0)
+  material.dispose(); legacyMaterial.dispose(); placeholder.dispose()
+})
+
+test('global Earth surface mask stores planar 4K coverage and dateline-continuous shoreline SDF', () => {
+  const width = 4096, height = 2048, count = width * height
+  const raw = gunzipSync(readFileSync(new URL('../public/textures/earth-surface-base.bin.gz', import.meta.url)))
+  const metadata = JSON.parse(readFileSync(new URL('../public/textures/earth-color.json', import.meta.url), 'utf8'))
+  assert.equal(raw.length, count * 2)
+  assert.equal(metadata.globalMask.encoding, 'planar-rg8-water-coverage-sdf')
+  assert.equal(metadata.globalMask.shoreDistanceTexels, GLOBAL_SHORE_DISTANCE)
+  // Interior land (Sahara) has coverage 0 and negative distance; open Pacific has coverage 255 and positive distance.
+  const sahara = Math.floor((90 - 23) / 180 * height) * width + Math.floor((10 + 180) / 360 * width)
+  const pacific = Math.floor((90 - 0) / 180 * height) * width + Math.floor((-140 + 180) / 360 * width)
+  assert.equal(raw[sahara], 0)
+  assert.equal(raw[count + sahara], 0)
+  assert.equal(raw[pacific], 255)
+  assert.equal(raw[count + pacific], 255)
+  // Dateline wrap: distance across x=0 and x=width-1 cannot differ by more than 1 texel (32 byte steps for range [-4, 4]).
+  let maxDatelineDelta = 0
+  for (let y = 0; y < height; y++) {
+    const delta = Math.abs(raw[count + y * width] - raw[count + y * width + width - 1])
+    if (delta > maxDatelineDelta) maxDatelineDelta = delta
+  }
+  assert.ok(maxDatelineDelta <= 33, `expected wrapped dateline SDF continuity, got byte delta ${maxDatelineDelta}`)
 })

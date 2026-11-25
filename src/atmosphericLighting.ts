@@ -35,10 +35,25 @@ export function configureAtmosphericLighting(material: THREE.Material, state: At
     // Expand this one chunk so both point and shadowed directional sunlight
     // receive the SAME transmission before their BRDF/specular evaluation.
     let lights: string = THREE.ShaderChunk.lights_fragment_begin
-    lights = lights.replaceAll('RE_Direct( directLight,', 'directLight.color *= mix(vec3(1.0),atmSunTransmission(atmSurfacePoint),atmEnabled);\nRE_Direct( directLight,')
+    const cloudShadow = profile.id === 'earth' ? ' * mix(1.0, atmEarthCloudShadow(atmSurfacePoint), atmEnabled)' : ''
+    lights = lights.replaceAll('RE_Direct( directLight,', `directLight.color *= mix(vec3(1.0),atmSunTransmission(atmSurfacePoint),atmEnabled)${cloudShadow};\nRE_Direct( directLight,`)
     lights = lights.replace('vec3 irradiance = getAmbientLightIrradiance( ambientLightColor );',
       'vec3 irradiance = mix(getAmbientLightIrradiance(ambientLightColor),atmSkyIrradiance(atmSurfacePoint),atmEnabled);')
     shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_begin>', lights)
+    if (shader.fragmentShader.includes('surfaceLiquidWeight') && shader.fragmentShader.includes('#include <lights_fragment_end>')) {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+        if (atmEnabled > 0.0 && surfaceLiquidWeight > 0.001) {
+          vec3 atmReflBody = normalize(atmViewToBody * reflect(-geometryViewDir, geometryNormal));
+          vec3 atmSurfUnit = normalize(atmSurfacePoint);
+          atmReflBody = normalize(atmReflBody + atmSurfUnit * max(0.0, 0.04 - dot(atmReflBody, atmSurfUnit)));
+          float atmNdotV = clamp(dot(geometryNormal, geometryViewDir), 0.0, 1.0);
+          float atmRough = clamp(material.roughness, 0.04, 1.0);
+          float atmFresnel = surfaceLiquidF0 + (max(1.0 - atmRough, surfaceLiquidF0) - surfaceLiquidF0) * pow(1.0 - atmNdotV, 5.0);
+          vec3 atmReflSky = atmSkyReflection(atmSurfacePoint, atmReflBody);
+          reflectedLight.indirectSpecular += atmReflSky * (atmFresnel * surfaceLiquidWeight * atmEnabled);
+          reflectedLight.indirectDiffuse *= (1.0 - atmFresnel * surfaceLiquidWeight * 0.65 * atmEnabled);
+        }`)
+    }
   }
-  material.customProgramCacheKey = () => key + `/${profile.id}-atmospheric-illumination-v3/${fallbackSphere ? 'sphere' : 'terrain'}`
+  material.customProgramCacheKey = () => key + `/${profile.id}-atmospheric-illumination-v4/${fallbackSphere ? 'sphere' : 'terrain'}`
 }

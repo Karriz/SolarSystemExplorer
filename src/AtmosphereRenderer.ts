@@ -12,10 +12,14 @@ function atmosphereLightingState() {
     atmEnabled: { value: 0 }, atmSunDirection: { value: new THREE.Vector3(0, 1, 0) },
     atmSolar: { value: new THREE.Vector3(3, 3, 3) }, atmTableSize: { value: new THREE.Vector4(256, 64, 48, 24) },
     atmCameraKm: { value: new THREE.Vector3() }, atmViewForward: { value: new THREE.Vector3(0, 0, -1) },
+    atmViewToBody: { value: new THREE.Matrix3() },
     atmDepthCoefficients: { value: new THREE.Vector2(1, -.1) },
     atmTransmittance: { value: null as THREE.DataTexture | null },
     atmMultiple: { value: null as THREE.DataTexture | null }, atmIrradiance: { value: null as THREE.DataTexture | null },
     atmMultipleStrength: { value: 1 }, atmCloudPhase: { value: 0 }, atmCloudVariation: { value: 1 },
+    atmEarthClouds: { value: null as THREE.Texture | null },
+    atmEarthCloudsReady: { value: 0 },
+    atmEarthCloudStrength: { value: 1 },
   }
 }
 export type SkyVisibilityTarget =
@@ -42,7 +46,7 @@ export class AtmosphereRenderer {
   private starVisibility = 1
   private startedAt = 0
   private readonly cameraKm = this.lighting.atmCameraKm
-  private readonly viewToBody = { value: new THREE.Matrix3() }
+  private readonly viewToBody = this.lighting.atmViewToBody
   private readonly inverseProjection = { value: new THREE.Matrix4() }
   private readonly sceneDepth = { value: null as THREE.DepthTexture | null }
   private readonly bodyInverse = new THREE.Quaternion()

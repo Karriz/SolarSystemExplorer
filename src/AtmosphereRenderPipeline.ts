@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { GiantPlanetRenderer } from './GiantPlanetRenderer.ts'
 import { SolarRenderer } from './SolarRenderer.ts'
 import type { GiantBody } from './giantPlanetProfiles.ts'
+import type { BodyId } from './ephemeris.ts'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { applySkyVisibility, AtmosphereRenderer, type AtmosphereFrame } from './AtmosphereRenderer.ts'
 import { marsAtmosphere, titanAtmosphere, venusAtmosphere, type AtmosphereBody } from './atmosphereProfiles.ts'
@@ -117,12 +118,12 @@ export class AtmosphereRenderPipeline {
     }
   }
 
-  render(scene: THREE.Scene, camera: THREE.Camera, atmosphereFrame?: AtmosphereFrame | AtmosphereFrame[], date = new Date()) {
+  render(scene: THREE.Scene, camera: THREE.Camera, atmosphereFrame?: AtmosphereFrame | AtmosphereFrame[], date = new Date(), bodies?: Map<BodyId, THREE.Mesh>) {
     if (this.disposed) return
     this.resize()
     const frames = Array.isArray(atmosphereFrame) ? atmosphereFrame : atmosphereFrame ? [atmosphereFrame] : []
     if (this.appearanceSun) {
-      this.giants.forEach(giant => giant.update(camera, date, this.appearanceSun!.position))
+      this.giants.forEach(giant => giant.update(camera, date, this.appearanceSun!.position, bodies))
       this.solar?.update(camera, this.target?.depthTexture ?? null, this.renderer.getSize(this.viewport))
     }
     const ids: AtmosphereBody[] = ['earth', 'mars', 'venus', 'titan']
